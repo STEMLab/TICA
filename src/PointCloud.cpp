@@ -172,3 +172,156 @@ bool PointCloud::read_from_pcd(std::istream& in, float sampling) {
 
 	return true;
 }
+
+
+PCBox::PCBox() 
+	: bounding_box(Point3D(FLT_MAX, FLT_MAX, FLT_MAX), Point3D(-FLT_MAX, -FLT_MAX, -FLT_MAX))
+{
+
+}
+
+void PCBox::clear(void) {
+
+}
+
+void PCBox::draw(void) const {
+	//std::cout << "DRAWING" << bounding_box.min.x << ',' << bounding_box.min.y << ',' << bounding_box.min.z << std::endl;
+	//std::cout << "     TO" << bounding_box.max.x << ',' << bounding_box.max.y << ',' << bounding_box.max.z << std::endl;
+	glLineWidth(1.0);
+	glColor3f(1, 1, 1);
+	glBegin(GL_LINE_STRIP);
+	glVertex3f(bounding_box.min.x, bounding_box.min.y, bounding_box.min.z);
+	glVertex3f(bounding_box.min.x, bounding_box.max.y, bounding_box.min.z);
+	glVertex3f(bounding_box.max.x, bounding_box.max.y, bounding_box.min.z);
+	glVertex3f(bounding_box.max.x, bounding_box.min.y, bounding_box.min.z);
+	glVertex3f(bounding_box.min.x, bounding_box.min.y, bounding_box.min.z);
+	glEnd();
+
+	glBegin(GL_LINE_STRIP);
+	glVertex3f(bounding_box.min.x, bounding_box.min.y, bounding_box.max.z);
+	glVertex3f(bounding_box.min.x, bounding_box.max.y, bounding_box.max.z);
+	glVertex3f(bounding_box.max.x, bounding_box.max.y, bounding_box.max.z);
+	glVertex3f(bounding_box.max.x, bounding_box.min.y, bounding_box.max.z);
+	glVertex3f(bounding_box.min.x, bounding_box.min.y, bounding_box.max.z);
+	glEnd();
+
+	glBegin(GL_LINES);
+	glVertex3f(bounding_box.min.x, bounding_box.min.y, bounding_box.min.z);
+	glVertex3f(bounding_box.min.x, bounding_box.min.y, bounding_box.max.z);
+	glVertex3f(bounding_box.min.x, bounding_box.max.y, bounding_box.min.z);
+	glVertex3f(bounding_box.min.x, bounding_box.max.y, bounding_box.max.z);
+	glVertex3f(bounding_box.max.x, bounding_box.max.y, bounding_box.min.z);
+	glVertex3f(bounding_box.max.x, bounding_box.max.y, bounding_box.max.z);
+	glVertex3f(bounding_box.max.x, bounding_box.min.y, bounding_box.min.z);
+	glVertex3f(bounding_box.max.x, bounding_box.min.y, bounding_box.max.z);
+	glEnd();
+}
+bool PCBox::read_from_pcd(std::istream& in) {
+	// ASSUMPTION:
+// all x,y,z are size-4 floats.
+	std::string line;
+
+	int unit_size = -1;
+	int x_offset = 0;
+	int y_offset = 0;
+	int z_offset = 0;
+
+	std::vector<int> sizes;
+	std::vector<int> counts;
+
+	int w = -1;
+	int h = -1;
+	int n = -1;
+
+	enum DATA_TYPE {
+		DATA_TYPE_UNKNOWN,
+		DATA_TYPE_BINARY,
+		DATA_TYPE_ASCII,
+	} type = DATA_TYPE_UNKNOWN;
+
+	while (getline(in, line)) {
+		if (line.empty() || line[0] == '#') continue;
+
+		std::string tag;
+		std::stringstream ss(line);
+		ss >> tag;
+		if (tag == "VERSION") {
+			continue;
+		}
+		else if (tag == "FIELDS") {
+			std::string fieldname;
+			int offset = -1;
+			while (ss >> fieldname) {
+				++offset;
+				if (fieldname.size() != 1) continue;
+				switch (fieldname[0]) {
+				case'X':case'x': x_offset = offset; continue;
+				case'Y':case'y': y_offset = offset; continue;
+				case'Z':case'z': z_offset = offset; continue;
+				default:; continue;
+				}
+			}
+		}
+		else if (tag == "SIZE") {
+			int s;
+			while (ss >> s) {
+				sizes.push_back(s);
+			}
+		}
+		else if (tag == "TYPE") {
+			continue;
+		}
+		else if (tag == "COUNT") {
+			int c;
+			while (ss >> c) {
+				counts.push_back(c);
+			}
+		}
+		else if (tag == "WIDTH") {
+			ss >> w;
+		}
+		else if (tag == "HEIGHT") {
+			ss >> h;
+		}
+		else if (tag == "POINTS") {
+			ss >> n;
+		}
+		else if (tag == "DATA") {
+			std::string t;
+			ss >> t;
+			if (t == "ascii") type = DATA_TYPE_ASCII;
+			else if (t == "binary") type = DATA_TYPE_BINARY;
+			break;
+		}
+	}
+
+	unit_size = 0;
+	int x_byteoffset = 0;
+	int y_byteoffset = 0;
+	int z_byteoffset = 0;
+	for (size_t i = 0; i < sizes.size(); ++i) {
+		if (i == x_offset) x_byteoffset = unit_size;
+		else if (i == y_offset) y_byteoffset = unit_size;
+		else if (i == z_offset) z_byteoffset = unit_size;
+
+		unit_size += sizes[i] * counts[i];
+	}
+
+	if (w == -1) w = 1;
+	if (h == -1) h = 1;
+	if (n == -1) n = w * h;
+	char *buf = new char[unit_size];
+	
+	
+	for (int j = 0; j < n; ++j) {
+		if (!in.read(buf, unit_size)) return false;
+		float *x = (float*)(buf + x_byteoffset);
+		float *y = (float*)(buf + y_byteoffset);
+		float *z = (float*)(buf + z_byteoffset);
+
+		Point3D p(*x,*y,*z);
+		bounding_box.add(p);
+	}
+
+	delete[] buf;
+}
