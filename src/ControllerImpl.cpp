@@ -397,6 +397,20 @@ void MainViewer::make_ui(void) {
 			Facet *f = *selected_facet.begin();
 			f->reverse();
 		}
+
+		{
+			Facet *f = *selected_facet.begin();
+			if (f->num_holes() == 0) {
+				if (ImGui::Button("Split")) {
+					if (!next) {
+						next = new PolygonSpliter(this, f);
+						clear_selection();
+					}
+				}
+			}
+		}
+		ImGui::Text("");
+
 		if (ImGui::Button("Planarize")) {
 			Facet *f = *selected_facet.begin();
 			f->planarize();
@@ -408,6 +422,7 @@ void MainViewer::make_ui(void) {
 				clear_selection();
 			}
 		}*/
+
 		ImGui::Text("");
 		if (ImGui::Button("Delete")) {
 			Facet *f = *selected_facet.begin();
@@ -569,10 +584,12 @@ void MainViewer::make_ui(void) {
 	if (selected_facet.size() == 0 && selected_edge.size() == 0 && selected_vertex.size() == 2) {
 		vector<Vertex*> vs(selected_vertex.begin(), selected_vertex.end());
 		if (vs[0]->num_shared_facets(vs[1]) == 1) {
-			if (ImGui::Button("Split")) {
-				Facet *f = vs[0]->get_a_shared_facet(vs[1]);
-				f->split_by_edge(f->get_vertex(vs[0]), f->get_vertex(vs[1]), &facets);
-				clear_selection();
+			Facet *f = vs[0]->get_a_shared_facet(vs[1]);
+			if (f->num_holes() == 0) {
+				if (ImGui::Button("Split")) {
+					f->split_by_edge(f->get_vertex(vs[0]), f->get_vertex(vs[1]), &facets);
+					clear_selection();
+				}
 			}
 		}
 	}
@@ -654,11 +671,13 @@ void MainViewer::draw_scene(void) {
 		glPopAttrib();
 	}
 	{
-		/*
+		
 		glPushAttrib(GL_ENABLE_BIT);
-		glDisable(GL_DEPTH_TEST);
+		//glDisable(GL_DEPTH_TEST);
+		glEnable(GL_DEPTH_TEST);
+		glDepthFunc(GL_GREATER);
 		glEnable(GL_LINE_STIPPLE);
-		glLineStipple(1, 0xFF00);
+		glLineStipple(1, 0xF0F0);
 		glLineWidth(1);
 
 		{
@@ -675,7 +694,8 @@ void MainViewer::draw_scene(void) {
 				}
 			}
 		}
-		glPopAttrib();*/
+		glDepthFunc(GL_LESS);
+		glPopAttrib();
 	}
 	{
 		glPushAttrib(GL_ENABLE_BIT);
@@ -774,6 +794,252 @@ void MainViewer::post_draw(void) {
 }
 
 
+
+PolygonSpliter::PolygonSpliter(Controller *ctrl, Facet *f)
+	:Controller(ctrl), target_facet(f), finalized(false), canceled(false), selected_i(-1), start_v(0), start_e(0), end_v(0), end_e(0), facet_alpha(0.2) {
+
+}
+void PolygonSpliter::make_ui(void) {
+	ImGui::Begin("Polygon Split");
+
+	ImGui::SliderFloat("BgFacet Opacity", &facet_alpha, 0.0, 1.0);
+
+	if ((start_v || start_e) && (end_v || end_e)) {
+		if (ImGui::Button("Finalize")) {
+			finalized = true;
+		}
+	}
+
+	if (ImGui::Button("Cancel")) {
+		canceled = true;
+	}
+
+	ImGui::End();
+}
+void PolygonSpliter::draw(DrawSetting* d, float vertex_r, float edge_w) {
+	glEnable(GL_DEPTH_TEST);
+	glDepthMask(GL_TRUE);
+	glDepthFunc(GL_LESS);
+
+	glEnable(GL_POLYGON_OFFSET_FILL);
+	glPolygonOffset(1, 1);
+	target_facet->draw(d);
+	glDisable(GL_POLYGON_OFFSET_FILL);
+
+	glDepthMask(GL_FALSE);
+	glLineWidth(edge_w);
+	glColor3f(1, 0.5, 0.5);
+	target_facet->draw_edge(d);
+	glDepthMask(GL_TRUE);
+	glPointSize(5);
+	int n = target_facet->num_vertices();
+	for (int i = 0; i < n; ++i) {
+		Vertex *v = target_facet->get_vertex(i)->get_vertex();
+
+		glColor3f(1, 1, 1);
+		v->draw(vertex_r, d);
+	}
+}
+void PolygonSpliter::draw_select_scene(void) {
+	Indexer ds;
+	draw(&ds, vertex_size, edge_width);
+}
+void PolygonSpliter::draw_scene(void) {
+	{
+		Highlighter ds(selected_i);
+		draw(&ds, vertex_size, edge_width);
+	}
+
+	{
+		ColorDrawer ds_g(0, 0.5, 0, facet_alpha);
+		ColorDrawer ds_b(0, 0, 0, facet_alpha);
+		const vector<Facet*>& facets = Controller::world->facets;
+		glPushAttrib(GL_ENABLE_BIT);
+		glEnable(GL_DEPTH_TEST);
+		glEnable(GL_CULL_FACE);
+		glDepthMask(GL_FALSE);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glDisable(GL_DEPTH_TEST);
+		glLineWidth(1);
+		for (int i = 0; i < facets.size(); ++i) {
+			if (facets[i] == target_facet) continue;
+			facets[i]->draw(&ds_g);
+			facets[i]->draw_edge(&ds_b);
+		}
+		glDepthMask(GL_TRUE);
+		glPopAttrib();
+	}
+
+	{
+		Highlighter ds(-1);
+		for (int i = 0; i < mid_points.size(); ++i) {
+			Vertex v(mid_points[i].x, mid_points[i].y, mid_points[i].z);
+			v.draw(vertex_size, &ds);
+		}
+
+		glColor3f(1, 1, 1);
+		glLineWidth(edge_width);
+		glBegin(GL_LINE_STRIP);
+		for (int i = 0; i < mid_points.size(); ++i) {
+			glVertex3f(mid_points[i].x, mid_points[i].y, mid_points[i].z);
+		}
+		glEnd();
+	}
+	if (selected_i != -1) {
+		Highlighter ds(-1);
+		Vertex v(hover_p.x, hover_p.y, hover_p.z);
+		v.draw(vertex_size, &ds);
+
+		if (!mid_points.empty()) {
+			glColor3f(1, 1, 1);
+			glEnable(GL_LINE_STIPPLE);
+			glLineStipple(1, 0xF0F0);
+			glBegin(GL_LINES);
+			int m = mid_points.size() - 1;
+			glVertex3f(mid_points[m].x, mid_points[m].y, mid_points[m].z);
+			glVertex3f(hover_p.x, hover_p.y, hover_p.z);
+			glEnd();
+			glDisable(GL_LINE_STIPPLE);
+		}
+	}
+}
+void PolygonSpliter::on_mouse_down(int x, int y, const Line3D& ray, int current_obj) {
+	Selector sel(current_obj);
+	draw(&sel, vertex_size, edge_width);
+
+	if (sel.selected_type == Selector::TYPE_VERTEX || sel.selected_type == Selector::TYPE_EDGE) {
+		if (!start_v && !start_e) {
+			if (sel.selected_type == Selector::TYPE_VERTEX) { 
+				start_v = target_facet->get_vertex(sel.selected_g)->get_vertex();
+
+				mid_points.push_back(start_v->to_point());
+			}
+			else {
+				start_e = target_facet->get_edge(sel.selected_i);
+
+				scalar_t alpha;
+				interp(ray, target_facet->get_plane(), &alpha);
+				Point3D p = ray.p + alpha * ray.v;
+				mid_points.push_back(p);
+			}
+		}
+		else if (!end_v && !end_e) {
+			if (sel.selected_type == Selector::TYPE_VERTEX) {
+				end_v = target_facet->get_vertex(sel.selected_g)->get_vertex();;
+				
+				mid_points.push_back(end_v->to_point());
+			}
+			else {
+				end_e = target_facet->get_edge(sel.selected_i);
+
+				scalar_t alpha;
+				interp(ray, target_facet->get_plane(), &alpha);
+				Point3D p = ray.p + alpha * ray.v;
+				mid_points.push_back(p);
+			}
+		}
+	}
+
+	else if (sel.selected_type == Selector::TYPE_FACET) {
+		if ((start_v || start_e) && (!end_v && !end_e)) {
+			scalar_t alpha;
+			interp(ray, target_facet->get_plane(), &alpha);
+			Point3D p = ray.p + alpha * ray.v;
+			mid_points.push_back(p);
+		}
+	}
+}
+void PolygonSpliter::on_mouse_drag(int x, int y, const Line3D& ray, int current_obj) {
+
+}
+void PolygonSpliter::on_mouse_hover(int x, int y, const Line3D& ray, int current_obj) {
+	Selector sel(current_obj);
+	draw(&sel, vertex_size, edge_width);
+
+	selected_i = -1;
+
+	if (sel.selected_type == Selector::TYPE_VERTEX || sel.selected_type == Selector::TYPE_EDGE) {
+		if ((!start_v && !start_e) || (!end_v && !end_e)) {
+			selected_i = current_obj;
+			if (sel.selected_type == Selector::TYPE_VERTEX) {
+				hover_p = target_facet->get_vertex(sel.selected_g)->to_point3();
+			}
+			else {
+				scalar_t alpha;
+				interp(ray, target_facet->get_plane(), &alpha);
+				hover_p = ray.p + alpha * ray.v;
+			}
+		}
+	}
+
+	if (sel.selected_type == Selector::TYPE_FACET) {
+		if ((start_v || start_e) && (!end_v && !end_e)) {
+			selected_i = current_obj;
+
+			scalar_t alpha;
+			interp(ray, target_facet->get_plane(), &alpha);
+			hover_p = ray.p + alpha * ray.v;
+		}
+	}
+}
+void PolygonSpliter::on_mouse_up(int x, int y, const Line3D& ray, int current_obj) {
+
+}
+
+void PolygonSpliter::post_draw(void) {
+	if (finalized) {
+		if (start_e) {
+			Vertex *v_s = new Vertex(mid_points[0].x, mid_points[0].y, mid_points[0].z);
+			target_facet->split_edge(start_e, v_s);
+			world->vertices.push_back(v_s);
+			start_v = v_s;
+		}
+		if (end_e) {
+			int m = mid_points.size() - 1;
+			Vertex *v_e = new Vertex(mid_points[m].x, mid_points[m].y, mid_points[m].z);
+			target_facet->split_edge(end_e, v_e);
+			world->vertices.push_back(v_e);
+			end_v = v_e;
+		}
+
+		vector<Facet*> ret;
+		if (!target_facet->split_by_edge(target_facet->get_vertex(start_v), target_facet->get_vertex(end_v), &ret)) {
+			end();
+			return;
+		}
+		world->facets.push_back(ret[0]);
+		
+		vector<Vertex*> mps;
+		for (int i = 1; i < mid_points.size() - 1; ++i) {
+			Vertex *v = new Vertex(mid_points[i].x, mid_points[i].y, mid_points[i].z);
+			mps.push_back(v);
+			world->vertices.push_back(v);
+		}
+		{
+			FacetVertex * v = target_facet->get_vertex(end_v);
+			for (int i = 0; i < mps.size(); ++i) {
+				target_facet->split_edge(v->outgoing_edge(), mps[i]);
+			}
+		}
+		target_facet->triangulate();
+
+		target_facet = ret[0];
+		{
+			FacetVertex * v = target_facet->get_vertex(end_v);
+			for (int i = 0; i < mps.size(); ++i) {
+				target_facet->split_edge(v->incoming_edge(), mps[i]);
+			}
+		}
+		target_facet->triangulate();
+		end();
+		return;
+	}
+	if (canceled) {
+		end();
+		return;
+	}
+}
 
 
 
@@ -1028,7 +1294,7 @@ void PolygonEditor::draw_scene(void) {
 			glPopAttrib();
 
 			ColorDrawer d_edge(0, 0, 1);
-			glLineStipple(1, 0xFF00);
+			glLineStipple(1, 0xF0F0);
 			glLineWidth(1);
 			glPushAttrib(GL_ENABLE_BIT);
 			glEnable(GL_LINE_STIPPLE);
@@ -1057,7 +1323,7 @@ void PolygonEditor::draw_scene(void) {
 
 
 		ColorDrawer d_edge(0, 0, 1);
-		glLineStipple(1, 0xFF00);
+		glLineStipple(1, 0xF0F0);
 		glLineWidth(1);
 		glPushAttrib(GL_ENABLE_BIT);
 		glEnable(GL_LINE_STIPPLE);

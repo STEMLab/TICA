@@ -333,6 +333,9 @@ Point3D FacetVertex::to_point3(void) const {
 	return Point3D(associated_vertex->to_point());
 }
 
+FacetEdge *FacetVertex::incoming_edge(void) const { return incoming;  }
+FacetEdge *FacetVertex::outgoing_edge(void) const { return outgoing;  }
+
 FacetEdge::FacetEdge(Facet* _f, FacetVertex* _u, FacetVertex* _v)
 	: facet(_f), u(_u), v(_v)
 {

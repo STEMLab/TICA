@@ -135,6 +135,31 @@ struct ConnectionEditor : public BasicViewSelector {
 	Connection c;
 };
 
+struct PolygonSpliter : public Controller {
+	PolygonSpliter(Controller *, Facet *f);
+	virtual void make_ui(void);
+	virtual void draw(DrawSetting* d, float vertex_r, float edge_w);
+	virtual void draw_select_scene(void);
+	virtual void draw_scene(void);
+	virtual void on_mouse_down(int x, int y, const Line3D& ray, int current_obj);
+	virtual void on_mouse_drag(int x, int y, const Line3D& ray, int current_obj);
+	virtual void on_mouse_hover(int x, int y, const Line3D& ray, int current_obj);
+	virtual void on_mouse_up(int x, int y, const Line3D& ray, int current_obj);
+	virtual void post_draw(void);
+
+	Facet *target_facet;
+	bool finalized;
+	bool canceled;
+	int selected_i;
+	float facet_alpha;
+
+	Vertex* start_v;
+	FacetEdge* start_e;
+	Vertex* end_v;
+	FacetEdge* end_e;
+	Point3D hover_p;
+	std::vector<Point3D> mid_points;
+};
 
 struct WallMaker : public BasicViewSelector {
 	WallMaker(Controller *, FacetEdge *e);

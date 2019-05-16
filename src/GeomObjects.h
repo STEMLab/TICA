@@ -68,6 +68,8 @@ public:
 	Point3D to_point3(void) const;
 	FacetVertex *prev(void) const;
 	FacetVertex *next(void) const;
+	FacetEdge *incoming_edge(void) const;
+	FacetEdge *outgoing_edge(void) const;
 
 	Facet* get_facet(void);
 	Vertex* get_vertex(void);
