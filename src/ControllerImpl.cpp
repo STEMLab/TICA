@@ -8,6 +8,9 @@ Point3D cpos(0,0,0);
 map<Facet*, string> __temp_facet_tag;
 char __temp_current_tag[1024];
 
+static float vertex_size = 0.1;
+static int edge_width = 5;
+
 Indexer::Indexer(int _o)
 	:offset(_o) {
 	;
@@ -216,11 +219,11 @@ void BasicViewSelector::make_ui(void) {
 
 void BasicViewSelector::draw_select_scene(void) {
 	Indexer idx;
-	draw(&idx, 0.1, 5);
+	draw(&idx, vertex_size, edge_width);
 }
 
 void BasicViewSelector::draw_scene(void) {
-	draw(0, 0.1, 5);
+	draw(0, vertex_size, edge_width);
 }
 void BasicViewSelector::on_mouse_down(int x, int y, const Line3D& ray, int current_obj) {
 	
@@ -336,7 +339,6 @@ void MainViewer::make_ui(void) {
 		}
 	}
 
-
 	if (ImGui::Button("Clear Selection")) {
 		clear_selection();
 	}
@@ -424,15 +426,19 @@ void MainViewer::make_ui(void) {
 		{
 			Facet *fa = *selected_facet.begin();
 			Facet *fb = *selected_facet.rbegin();
-			if (ImGui::Button("Merge")) {
-				Facet::merge(fa, fb, &pts, &facets);
-				clear_selection();
+			if (fa->num_shared_edge(fb) >= 1) {
+				if (ImGui::Button("Merge")) {
+					Facet::merge(fa, fb, &pts, &facets);
+					clear_selection();
+				}
 			}
 
-			if (ImGui::Button("Make Connection")) {
-				if (!next) {
-					next = new ConnectionEditor(this, fa, fb);
-					clear_selection();
+			if (fa->get_plane().h.dot_product(fb->get_plane().h) < 0) {
+				if (ImGui::Button("Make Connection")) {
+					if (!next) {
+						next = new ConnectionEditor(this, fa, fb);
+						clear_selection();
+					}
 				}
 			}
 		}
@@ -441,10 +447,12 @@ void MainViewer::make_ui(void) {
 
 	if (selected_facet.size() == 0 && selected_edge.size() == 1 && selected_vertex.size() == 0) {
 		FacetEdge *e = *selected_edge.begin();
-		if (ImGui::Button("Make Wall")) {
-			if (!next) {
-				next = new WallMaker(this, e);
-				clear_selection();
+		if (e->get_u()->get_vertex()->num_shared_facets(e->get_v()->get_vertex()) == 1) {
+			if (ImGui::Button("Make Wall")) {
+				if (!next) {
+					next = new WallMaker(this, e);
+					clear_selection();
+				}
 			}
 		}
 		{
@@ -453,7 +461,7 @@ void MainViewer::make_ui(void) {
 			int hole_idx = -1;
 			do {
 				for (int i = 0; i < f->num_holes(); ++i) {
-					if (f->get_hole_edge(i) == e) {
+					if (f->get_hole_edge(i) == e_i) {
 						hole_idx = i;
 						break;
 					}
@@ -474,36 +482,37 @@ void MainViewer::make_ui(void) {
 
 		if (u->num_shared_facets() == 1) {
 			Facet *f = u->get_facet(0);
-			if (e->get_f() == f) {
-				if (e->get_v()->next()->get_vertex() == u
-					|| e->get_u()->prev()->get_vertex() == u) {
+			//if (e->get_f() == f) {
+			if (e->get_v()->next()->get_vertex() == u
+				|| e->get_u()->prev()->get_vertex() == u) {
 
-					if (ImGui::Button("Make Perpendicular")) {
-						Point3D p = u->to_point();
-						Point3D e1 = e->get_u()->to_point3();
-						Point3D e2 = e->get_v()->to_point3();
-						Vector3D direction = (e2 - e1).normalized();
-						Line3D l(e1, direction);
-						scalar_t alpha;
-						if (interp(p, l, &alpha)) {
-							Point3D q = l.p + alpha * l.v;
-							Vector3D perpdirection = p - q;
-							if (e->get_v()->next()->get_vertex() == u) {
-								p = e->get_v()->to_point3() + perpdirection;
-							}
-							else {
-								p = e->get_u()->to_point3() + perpdirection;
-							}
-							
-							Plane plane = f->get_plane();
-							
-							u->move_to(plane.project(p));
-							f->triangulate();
+				if (ImGui::Button("Make Perpendicular")) {
+					Point3D p = u->to_point();
+					Point3D e1 = e->get_u()->to_point3();
+					Point3D e2 = e->get_v()->to_point3();
+					Vector3D direction = (e2 - e1).normalized();
+					Line3D l(e1, direction);
+					scalar_t alpha;
+					if (interp(p, l, &alpha)) {
+						Point3D q = l.p + alpha * l.v;
+						Vector3D perpdirection = p - q;
+						if (e->get_v()->next()->get_vertex() == u) {
+							p = e->get_v()->to_point3() + perpdirection;
 						}
+						else {
+							p = e->get_u()->to_point3() + perpdirection;
+						}
+
+						Plane plane = f->get_plane();
+
+						u->move_to(plane.project(p));
+						f->triangulate();
 					}
+
 				}
 			}
-			else {
+			//}
+			else if(e->get_u()->get_vertex()->num_shared_facets(u) == 0) {
 				if (ImGui::Button("Align Point to Line")) {
 					Point3D p = u->to_point();
 					Point3D e1 = e->get_u()->to_point3();
@@ -527,6 +536,7 @@ void MainViewer::make_ui(void) {
 		FacetEdge* e = (*selected_edge.begin());
 
 		if (u->num_shared_facets() == 1 && v->num_shared_facets() == 1 && u->get_facet(0) == v->get_facet(0) && ( u->form_an_edge(v) || v->form_an_edge(u) )) {
+			
 			if (ImGui::Button("Make Parallel")) {
 				Point3D p = u->to_point();
 				Point3D q = v->to_point();
@@ -575,15 +585,141 @@ void MainViewer::make_ui(void) {
 			f->triangulate();
 			facets.push_back(f);
 			clear_selection();
+			selected_facet.insert(f);
 		}
 	}
+
+	ImGui::Text("");
+	ImGui::Text("==========================");
+	ImGui::SliderFloat("Vertex Size", &vertex_size, 0.01, 0.2);
+	ImGui::SliderInt("Edge Width", &edge_width, 1, 5);
 	ImGui::End();
 
 }
 
+struct ColorDrawer : public DrawSetting {
+	float r, g, b, a;
+	ColorDrawer(float _r, float _g, float _b, float _a = 1.0)
+	:r(_r),g(_g),b(_b),a(_a){
+
+	}
+	void begin_facets(void) {}
+	void begin_vertices(void) {}
+	void begin_edges(void) {}
+
+	bool begin_vertex(Vertex* v) {
+		glColor4f(r, g, b, a);
+		return true;
+	}
+	bool begin_facet(int, Facet* f) {
+		glColor4f(r, g, b, a);
+		return true;
+	}
+	bool begin_facetedge(int, FacetEdge* e) {
+		glColor4f(r, g, b, a);
+		return true;
+	}
+	bool begin_facetvertex(int, FacetVertex*) { 
+		glColor4f(r, g, b, a);
+		return true; 
+	}
+};
+
 void MainViewer::draw_scene(void) {
-	SelectedObjectHighlighter ds(this);
-	draw(&ds, 0.1, 5);
+	{
+		SelectedObjectHighlighter ds(this);
+		draw(&ds, vertex_size, edge_width);
+	}
+
+	{
+		glPushAttrib(GL_ENABLE_BIT);
+		glDisable(GL_DEPTH_TEST);
+		glEnable(GL_BLEND);
+		glDisable(GL_CULL_FACE);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		{
+			ColorDrawer ds(1, 0, 0, 0.1);
+			for (auto i = selected_facet.begin(); i != selected_facet.end(); ++i) {
+				(*i)->draw(&ds);
+			}
+		}
+		{
+			ColorDrawer ds(0, 0, 1, 0.1);
+			for (auto i = selected_vertex.begin(); i != selected_vertex.end(); ++i) {
+				for (int j = 0; j < (*i)->num_shared_facets(); ++j) {
+					(*i)->get_facet(j)->draw(&ds);
+				}
+			}
+		}
+		glPopAttrib();
+	}
+	{
+		/*
+		glPushAttrib(GL_ENABLE_BIT);
+		glDisable(GL_DEPTH_TEST);
+		glEnable(GL_LINE_STIPPLE);
+		glLineStipple(1, 0xFF00);
+		glLineWidth(1);
+
+		{
+			ColorDrawer ds(1, 0, 0, 1);
+			for (auto i = selected_facet.begin(); i != selected_facet.end(); ++i) {
+				(*i)->draw_edge(&ds);
+			}
+		}
+		{
+			ColorDrawer ds(0, 0, 1, 1);
+			for (auto i = selected_vertex.begin(); i != selected_vertex.end(); ++i) {
+				for (int j = 0; j < (*i)->num_shared_facets(); ++j) {
+					(*i)->get_facet(j)->draw_edge(&ds);
+				}
+			}
+		}
+		glPopAttrib();*/
+	}
+	{
+		glPushAttrib(GL_ENABLE_BIT);
+		{
+			glEnable(GL_DEPTH_TEST);
+			ColorDrawer ds(1, 0, 0, 1);
+			for (auto i = selected_vertex.begin(); i != selected_vertex.end(); ++i) {
+				(*i)->draw(vertex_size, &ds);
+			}
+		}
+		
+		{
+			glDisable(GL_DEPTH_TEST);
+			ColorDrawer ds(1, 0, 0, 0.1);
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			for (auto i = selected_vertex.begin(); i != selected_vertex.end(); ++i) {
+				(*i)->draw(vertex_size, &ds);
+			}
+		}
+		glPopAttrib();
+	}
+
+	{
+		glPushAttrib(GL_ENABLE_BIT);
+		{
+			glDisable(GL_DEPTH_TEST);
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			glEnable(GL_LINE_STIPPLE);
+			glLineStipple(1, 0xF0F0);
+			glColor4f(0.3, 0, 0, 0.2);
+			glLineWidth(edge_width);
+			for (auto i = selected_edge.begin(); i != selected_edge.end(); ++i) {
+				Point3D u = (*i)->get_u()->to_point3();
+				Point3D v = (*i)->get_v()->to_point3();
+				glBegin(GL_LINES);
+				glVertex3f(u.x, u.y, u.z);
+				glVertex3f(v.x, v.y, v.z);
+				glEnd();
+			}
+		}
+		glPopAttrib();
+	}
 }
 void MainViewer::on_mouse_down(int x, int y, const Line3D& ray, int current_obj) {
 	Selector sel(current_obj);
@@ -844,13 +980,11 @@ void PolygonEditor::draw(DrawSetting* d, float vertex_r, float edge_w) {
 		else {
 			pts[i]->draw(vertex_r, d);
 		}
-
-
 	}
 }
 void PolygonEditor::draw_select_scene(void) {
 	Indexer idx;
-	draw(&idx, 0.1, 5);
+	draw(&idx, vertex_size, edge_width);
 }
 void PolygonEditor::draw_scene(void) {
 	if (!baseplane.h.is_zero()) {
@@ -875,7 +1009,69 @@ void PolygonEditor::draw_scene(void) {
 	}
 
 	Highlighter ds(selected_i, 0);
-	draw(&ds, 0.1, 5);
+	draw(&ds, vertex_size, edge_width);
+
+	Selector sel(selected_i);
+	draw(&sel, vertex_size, edge_width);
+	if (sel.selected_type == Selector::TYPE_VERTEX) {
+		Vertex *v = pts[sel.selected_g];
+
+		for (int i = 0; i < v->num_shared_facets(); ++i) {
+			Facet *f = v->get_facet(i);
+			glPushAttrib(GL_ENABLE_BIT);
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			glDisable(GL_CULL_FACE);
+			glDisable(GL_DEPTH_TEST);
+			ColorDrawer d_face(0, 0, 1, 0.1);
+			f->draw(&d_face);
+			glPopAttrib();
+
+			ColorDrawer d_edge(0, 0, 1);
+			glLineStipple(1, 0xFF00);
+			glLineWidth(1);
+			glPushAttrib(GL_ENABLE_BIT);
+			glEnable(GL_LINE_STIPPLE);
+			glDisable(GL_DEPTH_TEST);
+			f->draw_edge(&d_edge);
+			glPopAttrib();
+			glPushAttrib(GL_ENABLE_BIT);
+			glEnable(GL_DEPTH_TEST);
+			f->draw_edge(&d_edge);
+			glPopAttrib();
+		}
+
+	}
+	else if (sel.selected_type == Selector::TYPE_EDGE) {
+		FacetEdge *e = facets[sel.selected_g]->get_edge(sel.selected_i);
+
+		Facet *f = e->get_f();;
+		glPushAttrib(GL_ENABLE_BIT);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glDisable(GL_CULL_FACE);
+		glDisable(GL_DEPTH_TEST);
+		ColorDrawer d(0, 0, 1, 0.1);
+		f->draw(&d);
+		glPopAttrib();
+
+
+		ColorDrawer d_edge(0, 0, 1);
+		glLineStipple(1, 0xFF00);
+		glLineWidth(1);
+		glPushAttrib(GL_ENABLE_BIT);
+		glEnable(GL_LINE_STIPPLE);
+		glDisable(GL_DEPTH_TEST);
+		f->draw_edge(&d_edge);
+		glPopAttrib();
+		glPushAttrib(GL_ENABLE_BIT);
+		glEnable(GL_DEPTH_TEST);
+		f->draw_edge(&d_edge);
+		glPopAttrib();
+	}
+	else if (sel.selected_type == Selector::TYPE_FACET) {
+		Facet *f = facets[sel.selected_g];
+	}
 }
 
 void PolygonEditor::on_mouse_down(int x, int y, const Line3D& ray, int current_obj) {

@@ -334,7 +334,7 @@ Point3D FacetVertex::to_point3(void) const {
 }
 
 FacetEdge::FacetEdge(Facet* _f, FacetVertex* _u, FacetVertex* _v)
-	: facet(_f), u(_u), v(_v), opposite(0)
+	: facet(_f), u(_u), v(_v)
 {
 		u->outgoing = this;
 		v->incoming = this;
@@ -362,20 +362,6 @@ Vector3D FacetEdge::compute_ring_normal_vector(void) const {
 		e = e_next;
 	} while (e != this);
 	return ret;
-}
-
-void FacetEdge::set_opposite(FacetEdge *e) {
-	if (opposite) opposite->opposite = 0;
-	if (!e) {
-		opposite = 0;
-		return;
-	}
-	if (e->opposite) e->set_opposite(0);
-	if (e->u->associated_vertex == v->associated_vertex &&
-		e->v->associated_vertex == u->associated_vertex) {
-		e->opposite = this;
-		opposite = e;
-	}
 }
 
 bool FacetEdge::is_shared(void) const {
@@ -658,7 +644,18 @@ FacetEdge* Facet::get_hole_edge(int i) const { return holes[i]; }
 int Facet::num_edges(void) const { return edge.size(); }
 int Facet::num_holes(void) const { return holes.size(); }
 int Facet::num_vertices(void) const { return vertex.size(); }
-
+int Facet::num_shared_edge(Facet *f) {
+	int n = 0;
+	for (int i = 0; i < edge.size(); ++i) {
+		for (int j = 0; j < f->edge.size(); ++j) {
+			if (edge[i]->get_u()->associated_vertex == f->edge[j]->get_v()->associated_vertex
+				&& edge[i]->get_v()->associated_vertex == f->edge[j]->get_u()->associated_vertex ) {
+				++n;
+			}
+		}
+	}
+	return n;
+}
 
 // Actions
 
@@ -1034,9 +1031,7 @@ bool Facet::remove_edge(int i) {
 	if (edge.size() == 2) return false;
 	if (i >= edge.size()) return false;
 	FacetEdge *e = edge[i];
-	e->set_opposite(0);
 	FacetEdge *e_next = e->next();
-	e_next->set_opposite(0);
 	e_next->u = e->u;
 	e->u->outgoing = e_next;
 	
@@ -1116,10 +1111,6 @@ bool Facet::split_edge(FacetEdge* e, Vertex *v3) {
 	FacetVertex* u = create_vertex(v3);
 	u->incoming = e;
 
-	if (e->opposite) {
-		e->opposite->opposite = 0;
-		e->opposite = 0;
-	}
 	FacetVertex* v = e->v;
 	v->incoming = 0;
 	e->v = u;

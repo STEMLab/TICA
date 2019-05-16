@@ -103,12 +103,9 @@ private:
 
 
 	Vector3D compute_ring_normal_vector(void) const;
-	void set_opposite(FacetEdge *e);
 
 	FacetVertex* u;
 	FacetVertex* v;
-
-	FacetEdge* opposite;
 
 	Facet* facet;
 };
@@ -141,6 +138,7 @@ public:
 	int num_edges(void) const;
 	int num_holes(void) const;
 	int num_vertices(void) const;
+	int num_shared_edge(Facet* f);
 
 	// Checks
 	bool has_no_adjacent_polygons(void) const;

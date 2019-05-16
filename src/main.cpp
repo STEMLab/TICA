@@ -279,6 +279,9 @@ void __temp_load_cubemap_texture(const string& filename) {
 
 void __temp_load_geometry(const string& filename) {
 
+	delete Controller::current_controller;
+	Controller::current_controller = new MainViewer(0);
+
 	w.clear();
 
 	ifstream in(filename);
