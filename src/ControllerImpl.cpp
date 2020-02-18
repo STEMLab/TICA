@@ -4,12 +4,14 @@ using namespace std;
 
 Point3D cpos(0,0,0);
 
+#include <sstream>
 #include <string>
 map<Facet*, string> __temp_facet_tag;
 char __temp_current_tag[1024];
+Point3D get_camera_pos(void);
 
-static float vertex_size = 0.1;
-static int edge_width = 5;
+static float vertex_size = 0.15;
+static int edge_width = 1;
 
 Indexer::Indexer(int _o)
 	:offset(_o) {
@@ -60,12 +62,17 @@ bool Highlighter::begin_vertex(Vertex*) {
 	}
 	return true;
 }
-bool Highlighter::begin_facet(int i, Facet*) {
+bool Highlighter::begin_facet(int i, Facet* f) {
 	if (++index == target) {
 		glColor3f(0.3, 0, 0);
 	}
 	else {
-		glColor3f(0.5, 0.5, 0.5);
+		if (abs(f->get_plane().h.normalized().z) > 0.8) {
+			glColor3f(0.4, 0.4, 0.4);
+		}
+		else {
+			glColor3f(0.5, 0.5, 0.5);
+		}
 	}
 	return true;
 }
@@ -270,7 +277,12 @@ struct SelectedObjectHighlighter : public DrawSetting {
 			glColor3f(0.3, 0, 0);
 		}
 		else {
-			glColor3f(0.5, 0.5, 0.5);
+			if (abs(f->get_plane().h.normalized().z) > 0.8) {
+				glColor3f(0.4, 0.4, 0.4);
+			}
+			else {
+				glColor3f(0.5, 0.5, 0.5);
+			}
 		}
 		return true;
 	}
@@ -296,322 +308,508 @@ void MainViewer::clear_selection(void) {
 }
 
 void MainViewer::make_ui(void) {
-	ImGui::Begin("Edit");
-	ImGui::Text("Selected Facets : %d", selected_facet.size());
-	ImGui::Text("Selected Edges : %d", selected_edge.size());
-	ImGui::Text("Selected Vertices : %d", selected_vertex.size());
+	{
+		ImGui::Begin("Edit");
+		/*ImGui::Text("Selected Facets : %d", selected_facet.size());
+		ImGui::Text("Selected Edges : %d", selected_edge.size());
+		ImGui::Text("Selected Vertices : %d", selected_vertex.size());*/
 
-	if( selected_facet.size() == 1){
-		Facet*f = (*selected_facet.begin());
-		Plane p = f->get_plane();
-		ImGui::Text("Clicked Pos : %f %f %f", cpos.x, cpos.y, cpos.z);
-		ImGui::Text("Selected Facet Normal : %f %f %f", p.h.x, p.h.y, p.h.z );
-		ImGui::Text("Selected Facet Center : %f %f %f", p.p.x, p.p.y, p.p.z);
-		ImGui::Text("Selected Facet #Vertices : %d", f->num_vertices());
-	}
-	if (selected_vertex.size() == 1) {
-		Vertex*v = (*selected_vertex.begin());
-		Point3D p = v->to_point();
-		ImGui::Text("Selected Vertex Pos: %f %f %f", p.x, p.y, p.z);
-	}
-	if (selected_vertex.size() == 2) {
-		Vertex*u = (*selected_vertex.begin());
-		Vertex*v = (*selected_vertex.rbegin());
-		Point3D p = u->to_point();
-		Point3D q = v->to_point();
-		ImGui::Text("Selected Vertex1 Pos: %f %f %f", p.x, p.y, p.z);
-		ImGui::Text("Selected Vertex2 Pos: %f %f %f", q.x, q.y, q.z);
-		ImGui::Text("Point-Point Distance: %f", (float)(p - q).length());
-	}
-	if (selected_vertex.size() == 1 && selected_edge.size() == 1) {
-		Vertex* v = (*selected_vertex.begin());
-		FacetEdge* e = (*selected_edge.begin());
-		Point3D p = v->to_point();
-		Point3D q1 = e->get_u()->to_point3();
-		Point3D q2 = e->get_v()->to_point3();
-		Line3D l(q1, q2 - q1);
-		scalar_t alpha;
-		if (interp(p, l, &alpha)) {
-			if (alpha < 0) alpha = 0;
-			if (alpha > 0) alpha = 1;
-			Point3D q = l.p + alpha * l.v;
-			ImGui::Text("Point-Line Distance: %f", (float)(p - q).length());
+		/*if (selected_facet.size() == 1) {
+			Facet*f = (*selected_facet.begin());
+			Plane p = f->get_plane();
+			ImGui::Text("Clicked Pos : %f %f %f", cpos.x, cpos.y, cpos.z);
+			ImGui::Text("Selected Facet Normal : %f %f %f", p.h.x, p.h.y, p.h.z);
+			ImGui::Text("Selected Facet Center : %f %f %f", p.p.x, p.p.y, p.p.z);
+			ImGui::Text("Selected Facet #Vertices : %d", f->num_vertices());
 		}
-	}
-
-	if (ImGui::Button("Clear Selection")) {
-		clear_selection();
-	}
-	
-	if (ImGui::Button("Edit Polygons")) {
-		if (!next) {
-			Plane plane(Point3D(0, 0, 0), Vector3D(0, 0, 0));
-			if (selected_facet.size() == 1) {
-				plane = (*selected_facet.begin())->get_plane();
+		if (selected_vertex.size() == 1) {
+			Vertex*v = (*selected_vertex.begin());
+			Point3D p = v->to_point();
+			ImGui::Text("Selected Vertex Pos: %f %f %f", p.x, p.y, p.z);
+		}
+		if (selected_vertex.size() == 2) {
+			Vertex*u = (*selected_vertex.begin());
+			Vertex*v = (*selected_vertex.rbegin());
+			Point3D p = u->to_point();
+			Point3D q = v->to_point();
+			ImGui::Text("Selected Vertex1 Pos: %f %f %f", p.x, p.y, p.z);
+			ImGui::Text("Selected Vertex2 Pos: %f %f %f", q.x, q.y, q.z);
+			ImGui::Text("Point-Point Distance: %f", (float)(p - q).length());
+		}
+		if (selected_vertex.size() == 1 && selected_edge.size() == 1) {
+			Vertex* v = (*selected_vertex.begin());
+			FacetEdge* e = (*selected_edge.begin());
+			Point3D p = v->to_point();
+			Point3D q1 = e->get_u()->to_point3();
+			Point3D q2 = e->get_v()->to_point3();
+			Line3D l(q1, q2 - q1);
+			scalar_t alpha;
+			if (interp(p, l, &alpha)) {
+				if (alpha < 0) alpha = 0;
+				if (alpha > 0) alpha = 1;
+				Point3D q = l.p + alpha * l.v;
+				ImGui::Text("Point-Line Distance: %f", (float)(p - q).length());
 			}
-			next = new PolygonEditor(this, plane);
+		}
+
+		if (ImGui::Button("Clear Selection")) {
 			clear_selection();
-		}
-	}
-
-	ImGui::Text("==== Available Action ====");
-
-	if (selected_facet.size() == 1 && selected_edge.size() == 0 && selected_vertex.size() == 0) {
-		{
-			Facet *f = *selected_facet.begin();			
-			/*
-			if (ImGui::Button("LOAD")) {
-				if (__temp_facet_tag.count(f)) {
-					strcpy(__temp_current_tag, __temp_facet_tag.at(f).c_str());
-				}
-				else {
-					__temp_current_tag[0] = 0;
-				}
-			}
-			ImGui::SameLine();
-			if (ImGui::InputText("", __temp_current_tag, 1024)) {
-
-			}
-			ImGui::SameLine();
-			if (ImGui::Button("SAVE")) {
-				__temp_facet_tag.insert(make_pair(f, string(__temp_current_tag)));
-			}
-			ImGui::SameLine();
-			if (ImGui::Button("Del")) {
-				__temp_facet_tag.erase(f);
-			}
-			*/
-		}
-		{
-			Facet *f = *selected_facet.begin();
-			if (f->has_no_adjacent_polygons()) {
-				if (ImGui::Button("Make 2.5D Solid")) {
-					if (!next) {
-						next = new SolidMaker(this, f);
-						clear_selection();
-					}
-				}
-			}
-		}
-		if (ImGui::Button("Reverse Direction")) {
-			Facet *f = *selected_facet.begin();
-			f->reverse();
-		}
-
-		{
-			Facet *f = *selected_facet.begin();
-			if (f->num_holes() == 0) {
-				if (ImGui::Button("Split")) {
-					if (!next) {
-						next = new PolygonSpliter(this, f);
-						clear_selection();
-					}
-				}
-			}
-		}
-		ImGui::Text("");
-
-		if (ImGui::Button("Planarize")) {
-			Facet *f = *selected_facet.begin();
-			f->planarize();
-		}
-		/*if (ImGui::Button("Make Connection")) {
-			Facet *f = *selected_facet.begin();
-			if (!next) {
-				next = new ConnectionEditor(this, f, 0);
-				clear_selection();
-			}
 		}*/
 
-		ImGui::Text("");
-		if (ImGui::Button("Delete")) {
-			Facet *f = *selected_facet.begin();
-			for (int i = 0; i < world->facets.size(); ++i) {
-				if (world->facets[i] == f) {
-					f->release(&world->vertices);
-					world->facets.erase(world->facets.begin() + i);
+		if (ImGui::Button("Edit Polygons", ImVec2(250,0))) {
+			if (!next) {
+				Plane plane(Point3D(0, 0, 0), Vector3D(0, 0, 0));
+				if (selected_facet.size() == 1) {
+					plane = (*selected_facet.begin())->get_plane();
+				}
+				next = new PolygonEditor(this, plane);
+				clear_selection();
+			}
+		}
+
+		if (selected_facet.size() == 1 && selected_edge.size() == 0 && selected_vertex.size() == 0) {
+			do {
+				{
+					Facet *f = *selected_facet.begin();
+					/*
+					if (ImGui::Button("LOAD")) {
+						if (__temp_facet_tag.count(f)) {
+							strcpy(__temp_current_tag, __temp_facet_tag.at(f).c_str());
+						}
+						else {
+							__temp_current_tag[0] = 0;
+						}
+					}
+					ImGui::SameLine();
+					if (ImGui::InputText("", __temp_current_tag, 1024)) {
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("SAVE")) {
+						__temp_facet_tag.insert(make_pair(f, string(__temp_current_tag)));
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("Del")) {
+						__temp_facet_tag.erase(f);
+					}
+					*/
+				}
+				{
+					Facet *f = *selected_facet.begin();
+					if (f->has_no_adjacent_polygons()) {
+						if (ImGui::Button("Extrude", ImVec2(250, 0))) {
+							if (!next) {
+								next = new SolidMaker(this, f);
+								clear_selection();
+								break;
+							}
+						}
+					}
+				}
+				{
+					Facet *f = *selected_facet.begin();
+					if (ImGui::Button("Lift", ImVec2(250, 0))) {
+						if (!next) {
+							next = new PolygonLifter(this, f);
+							clear_selection();
+							break;
+						}
+					}
+				}
+				if (ImGui::Button("Reverse Direction", ImVec2(250, 0))) {
+					Facet *f = *selected_facet.begin();
+					f->reverse();
+				}
+
+				{
+					Facet *f = *selected_facet.begin();
+					if (f->num_holes() == 0) {
+						if (ImGui::Button("Split", ImVec2(250, 0))) {
+							if (!next) {
+								next = new PolygonSpliter(this, f);
+								clear_selection();
+								break;
+							}
+						}
+					}
+				}
+				ImGui::Text("");
+
+				if (ImGui::Button("Planarize", ImVec2(250, 0))) {
+					Facet *f = *selected_facet.begin();
+					f->planarize();
+				}
+				/*if (ImGui::Button("Make Connection")) {
+					Facet *f = *selected_facet.begin();
+					if (!next) {
+						next = new ConnectionEditor(this, f, 0);
+						clear_selection();
+					}
+				}*/
+
+				ImGui::Text("");
+				if (ImGui::Button("Delete", ImVec2(250, 0))) {
+					Facet *f = *selected_facet.begin();
+					for (int i = 0; i < world->facets.size(); ++i) {
+						if (world->facets[i] == f) {
+							f->release(&world->vertices);
+							world->facets.erase(world->facets.begin() + i);
+							break;
+						}
+					}
+					clear_selection();
 					break;
 				}
-			}
-			clear_selection();
+			} while (0);
 		}
-	}
 
-	if (selected_facet.size() == 2 && selected_edge.size() == 0 && selected_vertex.size() == 0) {
-		{
-			Facet *fa = *selected_facet.begin();
-			Facet *fb = *selected_facet.rbegin();
-			if (fa->num_shared_edge(fb) >= 1) {
-				if (ImGui::Button("Merge")) {
-					Facet::merge(fa, fb, &pts, &facets);
-					clear_selection();
+		if (selected_facet.size() == 2 && selected_edge.size() == 0 && selected_vertex.size() == 0) {
+			{
+				Facet *fa = *selected_facet.begin();
+				Facet *fb = *selected_facet.rbegin();
+				if (fa->num_shared_edge(fb) >= 1) {
+					if (ImGui::Button("Merge", ImVec2(250, 0))) {
+						Facet::merge(fa, fb, &pts, &facets);
+						clear_selection();
+					}
+				}
+
+				if (fa->get_plane().h.dot_product(fb->get_plane().h) < 0) {
+					if (ImGui::Button("Make Connection", ImVec2(250, 0))) {
+						if (!next) {
+							next = new ConnectionEditor(this, fa, fb);
+							clear_selection();
+						}
+					}
 				}
 			}
 
-			if (fa->get_plane().h.dot_product(fb->get_plane().h) < 0) {
-				if (ImGui::Button("Make Connection")) {
+		}
+
+		if (selected_facet.size() == 0 && selected_edge.size() == 1 && selected_vertex.size() == 0) {
+			FacetEdge *e = *selected_edge.begin();
+			if (e->get_u()->get_vertex()->num_shared_facets(e->get_v()->get_vertex()) == 1) {
+				if (ImGui::Button("Make Wall", ImVec2(250, 0))) {
 					if (!next) {
-						next = new ConnectionEditor(this, fa, fb);
+						next = new WallMaker(this, e);
+						clear_selection();
+					}
+				}
+			}
+			{
+				FacetEdge *e_i = e;
+				Facet *f = e->get_f();
+				int hole_idx = -1;
+				do {
+					for (int i = 0; i < f->num_holes(); ++i) {
+						if (f->get_hole_edge(i) == e_i) {
+							hole_idx = i;
+							break;
+						}
+					}
+					e_i = e_i->next();
+				} while (hole_idx == -1 && e_i != e);
+				if (hole_idx != -1) {
+					if (ImGui::Button("Remove Hole", ImVec2(250, 0))) {
+						f->remove_hole(hole_idx);
 						clear_selection();
 					}
 				}
 			}
 		}
-		
-	}
+		if (selected_facet.size() == 0 && selected_edge.size() == 1 && selected_vertex.size() == 1) {
+			Vertex* u = (*selected_vertex.begin());
+			FacetEdge* e = (*selected_edge.begin());
 
-	if (selected_facet.size() == 0 && selected_edge.size() == 1 && selected_vertex.size() == 0) {
-		FacetEdge *e = *selected_edge.begin();
-		if (e->get_u()->get_vertex()->num_shared_facets(e->get_v()->get_vertex()) == 1) {
-			if (ImGui::Button("Make Wall")) {
-				if (!next) {
-					next = new WallMaker(this, e);
-					clear_selection();
-				}
-			}
-		}
-		{
-			FacetEdge *e_i = e;
-			Facet *f = e->get_f();
-			int hole_idx = -1;
-			do {
-				for (int i = 0; i < f->num_holes(); ++i) {
-					if (f->get_hole_edge(i) == e_i) {
-						hole_idx = i;
-						break;
+			if (u->num_shared_facets() == 1) {
+				Facet *f = u->get_facet(0);
+				//if (e->get_f() == f) {
+				if (e->get_v()->next()->get_vertex() == u
+					|| e->get_u()->prev()->get_vertex() == u) {
+
+					if (ImGui::Button("Make Perpendicular", ImVec2(250, 0))) {
+						Point3D p = u->to_point();
+						Point3D e1 = e->get_u()->to_point3();
+						Point3D e2 = e->get_v()->to_point3();
+						Vector3D direction = (e2 - e1).normalized();
+						Line3D l(e1, direction);
+						scalar_t alpha;
+						if (interp(p, l, &alpha)) {
+							Point3D q = l.p + alpha * l.v;
+							Vector3D perpdirection = p - q;
+							if (e->get_v()->next()->get_vertex() == u) {
+								p = e->get_v()->to_point3() + perpdirection;
+							}
+							else {
+								p = e->get_u()->to_point3() + perpdirection;
+							}
+
+							Plane plane = f->get_plane();
+
+							u->move_to(plane.project(p));
+							f->triangulate();
+						}
+
 					}
 				}
-				e_i = e_i->next();
-			} while (hole_idx == -1 && e_i != e);
-			if (hole_idx != -1) {
-				if (ImGui::Button("Remove Hole")) {
-					f->remove_hole(hole_idx);
-					clear_selection();
+				//}
+				else if (e->get_u()->get_vertex()->num_shared_facets(u) == 0) {
+					if (ImGui::Button("Align Point to Line", ImVec2(250, 0))) {
+						Point3D p = u->to_point();
+						Point3D e1 = e->get_u()->to_point3();
+						Point3D e2 = e->get_v()->to_point3();
+						Vector3D direction = (e2 - e1);
+						Line3D l(e1, direction);
+						scalar_t alpha;
+						if (interp(p, l, &alpha)) {
+							p = l.p + alpha * l.v;
+							Plane plane = f->get_plane();
+							u->move_to(plane.project(p));
+							f->triangulate();
+						}
+					}
 				}
 			}
 		}
-	}
-	if (selected_facet.size() == 0 && selected_edge.size() == 1 && selected_vertex.size() == 1) {
-		Vertex* u = (*selected_vertex.begin());
-		FacetEdge* e = (*selected_edge.begin());
+		if (selected_facet.size() == 0 && selected_edge.size() == 1 && selected_vertex.size() == 2) {
+			Vertex* u = (*selected_vertex.begin());
+			Vertex* v = (*selected_vertex.rbegin());
+			FacetEdge* e = (*selected_edge.begin());
 
-		if (u->num_shared_facets() == 1) {
-			Facet *f = u->get_facet(0);
-			//if (e->get_f() == f) {
-			if (e->get_v()->next()->get_vertex() == u
-				|| e->get_u()->prev()->get_vertex() == u) {
+			if (u->num_shared_facets() == 1 && v->num_shared_facets() == 1 && u->get_facet(0) == v->get_facet(0) && (u->form_an_edge(v) || v->form_an_edge(u))) {
 
-				if (ImGui::Button("Make Perpendicular")) {
+				if (ImGui::Button("Make Parallel", ImVec2(250, 0))) {
 					Point3D p = u->to_point();
+					Point3D q = v->to_point();
+
+					Point3D c = ((u->to_vector() + v->to_vector()) / 2).to_point();
+					length_t d = (q - p).length();
 					Point3D e1 = e->get_u()->to_point3();
 					Point3D e2 = e->get_v()->to_point3();
 					Vector3D direction = (e2 - e1).normalized();
-					Line3D l(e1, direction);
-					scalar_t alpha;
-					if (interp(p, l, &alpha)) {
-						Point3D q = l.p + alpha * l.v;
-						Vector3D perpdirection = p - q;
-						if (e->get_v()->next()->get_vertex() == u) {
-							p = e->get_v()->to_point3() + perpdirection;
-						}
-						else {
-							p = e->get_u()->to_point3() + perpdirection;
-						}
 
-						Plane plane = f->get_plane();
+					Point3D p_new, q_new;
 
-						u->move_to(plane.project(p));
-						f->triangulate();
+					if ((p - c).dot_product(direction) > 0) {
+						p_new = c + direction * d / 2;
+						q_new = c - direction * d / 2;
+					}
+					else {
+						p_new = c - direction * d / 2;
+						q_new = c + direction * d / 2;
 					}
 
+					Plane plane = u->get_facet(0)->get_plane();
+					u->move_to(plane.project(p_new));
+					v->move_to(plane.project(q_new));
+					u->get_facet(0)->triangulate();
 				}
 			}
-			//}
-			else if(e->get_u()->get_vertex()->num_shared_facets(u) == 0) {
-				if (ImGui::Button("Align Point to Line")) {
-					Point3D p = u->to_point();
-					Point3D e1 = e->get_u()->to_point3();
-					Point3D e2 = e->get_v()->to_point3();
-					Vector3D direction = (e2 - e1);
-					Line3D l(e1, direction);
-					scalar_t alpha;
-					if (interp(p, l, &alpha)) {
-						p = l.p + alpha * l.v;
-						Plane plane = f->get_plane();
-						u->move_to(plane.project(p));
-						f->triangulate();
+		}
+
+		if (selected_facet.size() == 0 && selected_edge.size() == 0 && selected_vertex.size() == 2) {
+			vector<Vertex*> vs(selected_vertex.begin(), selected_vertex.end());
+			if (vs[0]->num_shared_facets(vs[1]) == 1) {
+				Facet *f = vs[0]->get_a_shared_facet(vs[1]);
+				if (f->num_holes() == 0) {
+					if (ImGui::Button("Split", ImVec2(250, 0))) {
+						f->split_by_edge(f->get_vertex(vs[0]), f->get_vertex(vs[1]), &facets);
+						clear_selection();
 					}
 				}
 			}
 		}
-	}
-	if (selected_facet.size() == 0 && selected_edge.size() == 1 && selected_vertex.size() == 2) {
-		Vertex* u = (*selected_vertex.begin());
-		Vertex* v = (*selected_vertex.rbegin());
-		FacetEdge* e = (*selected_edge.begin());
 
-		if (u->num_shared_facets() == 1 && v->num_shared_facets() == 1 && u->get_facet(0) == v->get_facet(0) && ( u->form_an_edge(v) || v->form_an_edge(u) )) {
-			
-			if (ImGui::Button("Make Parallel")) {
-				Point3D p = u->to_point();
-				Point3D q = v->to_point();
+		if (selected_facet.size() == 0 && selected_edge.size() == 0 && selected_vertex.size() == 3) {
+			vector<Vertex*> vs(selected_vertex.begin(), selected_vertex.end());
 
-				Point3D c = ((u->to_vector() + v->to_vector()) / 2).to_point();
-				length_t d = (q-p).length();
-				Point3D e1 = e->get_u()->to_point3();
-				Point3D e2 = e->get_v()->to_point3();
-				Vector3D direction = (e2 - e1).normalized();
+			if (ImGui::Button("Make Triangle", ImVec2(250, 0))) {
+				Facet* f = 0;
 
-				Point3D p_new, q_new;
+				Vector3D u = (vs[1]->to_point() - vs[0]->to_point());
+				Vector3D v = (vs[2]->to_point() - vs[0]->to_point());
+				Vector3D c(get_camera_pos() - ((vs[0]->to_vector() + vs[1]->to_vector() + vs[2]->to_vector()) / 3).to_point());
+				
+				if (!u.cross_product(v).is_zero()) {
+					if (u.cross_product(v).dot_product(c) > 0) {
+						f = Facet::create_facet(vs[0], vs[1], vs[2]);
+					}
+					else {
+						f = Facet::create_facet(vs[0], vs[2], vs[1]);
+					}
 
-				if ((p - c).dot_product(direction) > 0) {
-					p_new = c + direction * d / 2;
-					q_new = c - direction * d / 2;
-				}
-				else {
-					p_new = c - direction * d / 2;
-					q_new = c + direction * d / 2;
-				}
-
-				Plane plane = u->get_facet(0)->get_plane();
-				u->move_to(plane.project(p_new));
-				v->move_to(plane.project(q_new));
-				u->get_facet(0)->triangulate();
-			}
-		}
-	}
-
-	if (selected_facet.size() == 0 && selected_edge.size() == 0 && selected_vertex.size() == 2) {
-		vector<Vertex*> vs(selected_vertex.begin(), selected_vertex.end());
-		if (vs[0]->num_shared_facets(vs[1]) == 1) {
-			Facet *f = vs[0]->get_a_shared_facet(vs[1]);
-			if (f->num_holes() == 0) {
-				if (ImGui::Button("Split")) {
-					f->split_by_edge(f->get_vertex(vs[0]), f->get_vertex(vs[1]), &facets);
+					f->triangulate();
+					facets.push_back(f);
 					clear_selection();
+					//selected_facet.insert(f);
 				}
 			}
 		}
+
+		ImGui::Text("");
+		ImGui::SliderFloat("Vertex Size", &vertex_size, 0.01, 0.2);
+		ImGui::SliderInt("Edge Width", &edge_width, 1, 5);
+		ImGui::End();
 	}
 
-	if (selected_facet.size() == 0 && selected_edge.size() == 0 && selected_vertex.size() == 3) {
-		vector<Vertex*> vs(selected_vertex.begin(), selected_vertex.end());
-		
-		if (ImGui::Button("Make Triangle")) {
-			Facet *f = Facet::create_facet(vs[0], vs[1], vs[2]);
-			f->triangulate();
-			facets.push_back(f);
+
+
+
+
+
+
+
+
+
+
+
+
+	ImGui::Begin("Selection");
+	//if (ImGui::TreeNode("Selected Objects")) {
+		if (ImGui::Button("Clear Selection")) {
 			clear_selection();
-			selected_facet.insert(f);
 		}
-	}
+		ImGui::Text("Selected Facets : %d", selected_facet.size());
+		if (!selected_facet.empty()) {
+			ImGui::Columns(4);
+			static bool facet_list_table_column = (ImGui::SetColumnWidth(0, 80.0f), ImGui::SetColumnWidth(1, 90.0f), ImGui::SetColumnWidth(2, 200.0f), false);
 
-	ImGui::Text("");
-	ImGui::Text("==========================");
-	ImGui::SliderFloat("Vertex Size", &vertex_size, 0.01, 0.2);
-	ImGui::SliderInt("Edge Width", &edge_width, 1, 5);
+			ImGui::Text("*");
+			ImGui::NextColumn();
+			ImGui::Text("#Vertices");
+			ImGui::NextColumn();
+			ImGui::Text("Normal");
+			ImGui::NextColumn();
+			ImGui::Text("");
+			ImGui::NextColumn();
+
+			for (auto i = selected_facet.begin(); i != selected_facet.end(); ++i) {
+				ImGui::Text("%X", (void*)(*i));
+				ImGui::NextColumn();
+				ImGui::Text("%d", (*i)->num_vertices());
+				ImGui::NextColumn();
+				ImGui::Text("(%0.3f,%0.3f,%0.3f)", (*i)->get_plane().h.x, (*i)->get_plane().h.y, (*i)->get_plane().h.z);
+				ImGui::NextColumn();
+				/*
+				if ((*i)->num_holes() == 0) {
+					if (ImGui::Button("Split")) {
+						if (!next) {
+							next = new PolygonSpliter(this, (*i));
+							clear_selection();
+						}
+					}
+				}*/
+
+				ImGui::NextColumn();
+			}
+			ImGui::Columns(1);
+		}
+		ImGui::Text("Selected Edges : %d", selected_edge.size());
+		if(!selected_edge.empty()){
+			ImGui::Columns(6);
+			static bool edge_list_table_column = (ImGui::SetColumnWidth(0, 80.0f), ImGui::SetColumnWidth(1, 200.0f), ImGui::SetColumnWidth(2, 200.0f),
+				ImGui::SetColumnWidth(3, 200.0f), ImGui::SetColumnWidth(4, 80.0f), false);
+
+			ImGui::Text("*");
+			ImGui::NextColumn();
+			ImGui::Text("V1");
+			ImGui::NextColumn();
+			ImGui::Text("V2");
+			ImGui::NextColumn();
+			ImGui::Text("Direction");
+			ImGui::NextColumn();
+			ImGui::Text("Length");
+			ImGui::NextColumn();
+			ImGui::Text("");
+			ImGui::NextColumn();
+
+			for (auto i = selected_edge.begin(); i != selected_edge.end(); ++i) {
+				ImGui::Text("%X", (void*)(*i));
+				ImGui::NextColumn();
+				Point3D u = (*i)->get_u()->to_point3();
+				ImGui::Text("(%0.3f,%0.3f,%0.3f)", u.x, u.y, u.z);
+				ImGui::NextColumn();
+				Point3D v = (*i)->get_v()->to_point3();
+				ImGui::Text("(%0.3f,%0.3f,%0.3f)", v.x, v.y, v.z);
+				ImGui::NextColumn();
+				Vector3D d = v - u;
+				ImGui::Text("(%0.3f,%0.3f,%0.3f)", d.x, d.y, d.z);
+				ImGui::NextColumn();
+				ImGui::Text("%0.3f", d.length());
+				ImGui::NextColumn();
+
+				//ImGui::Button("Hello1");
+
+				ImGui::SameLine();
+
+				//ImGui::Button("Hello1");
+				ImGui::NextColumn();
+			}
+			ImGui::Columns(1);
+		}
+		ImGui::Text("Selected Vertices : %d", selected_vertex.size());
+		if (!selected_vertex.empty()) {
+
+			ImGui::Columns(4);
+			static bool vertex_list_table_column = (ImGui::SetColumnWidth(0, 80.0f), ImGui::SetColumnWidth(1, 200.0f), ImGui::SetColumnWidth(2, 200.0f), false);
+
+			ImGui::Text("*");
+			ImGui::NextColumn();
+			ImGui::Text("Pos");
+			ImGui::NextColumn();
+			ImGui::Text("#Facets");
+			ImGui::NextColumn();
+			ImGui::Text("");
+			ImGui::NextColumn();
+
+			for (auto i = selected_vertex.begin(); i != selected_vertex.end(); ++i) {
+				ImGui::Text("%X", (void*)(*i));
+				ImGui::NextColumn();
+				Point3D u = (*i)->to_point();
+				ImGui::Text("(%0.3f,%0.3f,%0.3f)", u.x, u.y, u.z);
+				ImGui::NextColumn();
+				ImGui::Text("%d", (*i)->num_shared_facets());
+
+				/*
+				for (int j = 0; j < (*i)->num_shared_facets(); ++j) {
+					stringstream ss;
+					ss << (j + 1);
+					string label = ss.str();
+					ImGui::SameLine();
+					if (ImGui::Button(label.c_str())) {
+						selected_facet.insert((*i)->get_facet(j));
+					}
+				}*/
+				ImGui::NextColumn();
+
+				//ImGui::Button("Hello1");
+
+				ImGui::SameLine();
+
+				//ImGui::Button("Hello1");
+				ImGui::NextColumn();
+			}
+
+			ImGui::Columns(1);
+		}
+		//ImGui::TreePop();
+	//}
+
+	/*if (ImGui::TreeNode("Available Actions")) {
+
+		if (ImGui::Button("Edit Polygons")) {
+			if (!next) {
+				Plane plane(Point3D(0, 0, 0), Vector3D(0, 0, 0));
+				if (selected_facet.size() == 1) {
+					plane = (*selected_facet.begin())->get_plane();
+				}
+				next = new PolygonEditor(this, plane);
+				clear_selection();
+			}
+		}
+
+		ImGui::TreePop();
+	}*/
 	ImGui::End();
-
 }
 
 struct ColorDrawer : public DrawSetting {
@@ -805,12 +1003,12 @@ void PolygonSpliter::make_ui(void) {
 	ImGui::SliderFloat("BgFacet Opacity", &facet_alpha, 0.0, 1.0);
 
 	if ((start_v || start_e) && (end_v || end_e)) {
-		if (ImGui::Button("Finalize")) {
+		if (ImGui::Button("Finalize", ImVec2(250, 0))) {
 			finalized = true;
 		}
 	}
 
-	if (ImGui::Button("Cancel")) {
+	if (ImGui::Button("Cancel", ImVec2(250, 0))) {
 		canceled = true;
 	}
 
@@ -1049,8 +1247,8 @@ WallMaker::WallMaker(Controller *ctrl, FacetEdge *e)
 }
 void WallMaker::make_ui(void) {
 	ImGui::Begin("Making Wall");
-	if( ImGui::Button("OK") ) finalized = true;
-	if( ImGui::Button("Cancel") ) canceled = true;
+	if( ImGui::Button("OK", ImVec2(250,0)) ) finalized = true;
+	if( ImGui::Button("Cancel", ImVec2(250, 0)) ) canceled = true;
 	ImGui::End();
 }
 void WallMaker::on_mouse_down(int x, int y, const Line3D& ray, int current_obj) {
@@ -1113,14 +1311,118 @@ void WallMaker::draw_scene(void) {
 	glEnable(GL_CULL_FACE);
 }
 
+
+
+
+PolygonLifter::PolygonLifter(Controller *ctrl, Facet *f)
+	:BasicViewSelector(ctrl), base_facet(f), finalized(false), canceled(false), height(0) {
+	;
+}
+void PolygonLifter::make_ui(void) {
+	ImGui::Begin("Polygon Lifting");
+	if (ImGui::Button("OK", ImVec2(250, 0))) finalized = true;
+	if (ImGui::Button("Cancel", ImVec2(250, 0))) canceled = true;
+	ImGui::End();
+}
+void PolygonLifter::on_mouse_down(int x, int y, const Line3D& ray, int current_obj) {
+	last_y = y;
+}
+void PolygonLifter::on_mouse_drag(int x, int y, const Line3D& ray, int current_obj) {
+	height += (last_y - y)*0.01;
+	last_y = y;
+}
+void PolygonLifter::on_mouse_up(int x, int y, const Line3D& ray, int current_obj) {
+
+}
+void PolygonLifter::post_draw(void) {
+	if (finalized) {
+		Vector3D h = height * base_facet->get_plane().h;
+		//base_facet->make_solid(h, &Controller::world->vertices, &Controller::world->facets);
+		Plane newplane(base_facet->get_plane().p + h, base_facet->get_plane().h);
+		vector<Point3D> pts_before; pts_before.reserve(base_facet->num_vertices());
+		vector<Point3D> pts_after; pts_after.reserve(base_facet->num_vertices());
+		bool failed = false;
+		for (int i = 0; i < base_facet->num_vertices(); ++i) {
+			FacetVertex *fv = base_facet->get_vertex(i);
+			pts_before.push_back(fv->to_point3());
+			SubspaceFilter filter;
+			Vertex *v = fv->get_vertex();
+			
+			for (int j = 0; j < v->num_shared_facets(); ++j) {
+				Facet *f = v->get_facet(j);
+				//cout << "SHARED FACET " << (f == base_facet) << endl;
+				if (f == base_facet) continue;
+				filter.add_plane(f->get_plane(), true);
+			}
+			
+			filter.add_plane(newplane, true);
+			Point3D newpt = fv->to_point3();
+			//cout << filter.dof << endl;
+			if (!filter.projection(fv->to_point3(), &newpt)) {
+				cout << "FAILED" << endl;
+				failed = true;
+				break;
+			}
+			//cout << h.z << '\t' << fv->to_point3().z << ' ' << newpt.z << endl;
+			pts_after.push_back(newpt);
+		}
+
+		if (!failed) {
+			//cout << "LIFTED" << endl;
+			set<Facet*> adj_facets;
+			for (int i = 0; i < base_facet->num_vertices(); ++i) {
+				FacetVertex *fv = base_facet->get_vertex(i);
+				Vertex *v = fv->get_vertex();
+				v->move_to(pts_after[i]);
+				for (int j = 0; j < v->num_shared_facets(); ++j) {
+					Facet *f = v->get_facet(j);
+					adj_facets.insert(f);
+				}
+			}
+
+			for (auto i = adj_facets.begin(); i != adj_facets.end(); ++i) {
+				(*i)->triangulate();
+			}
+
+			base_facet->set_plane(newplane);
+		}
+
+		end();
+		return;
+	}
+	if (canceled) {
+		end();
+		return;
+	}
+}
+
+void PolygonLifter::draw_scene(void) {
+	BasicViewSelector::draw_scene();
+	Vector3D h = height * base_facet->get_plane().h;
+	glPushMatrix();
+	glTranslatef(h.x, h.y, h.z);
+	base_facet->draw_edge(0);
+	glPopMatrix();
+}
+
+
+
+
+
+
+
+
+
+
+
 SolidMaker::SolidMaker(Controller *ctrl, Facet *f)
 	:BasicViewSelector(ctrl), base_facet(f), finalized(false), canceled(false), height(3.0) {
 	;
 }
 void SolidMaker::make_ui(void) {
-	ImGui::Begin("Making 2.5D Solid");
-	if (ImGui::Button("OK")) finalized = true;
-	if (ImGui::Button("Cancel")) canceled = true;
+	ImGui::Begin("Extrude to 2.5D Solid");
+	if (ImGui::Button("OK", ImVec2(250, 0))) finalized = true;
+	if (ImGui::Button("Cancel", ImVec2(250, 0))) canceled = true;
 	ImGui::End();
 }
 void SolidMaker::on_mouse_down(int x, int y, const Line3D& ray, int current_obj) {
@@ -1199,7 +1501,7 @@ void PolygonEditor::make_ui(void) {
 	ImGui::Begin("Polygon Editing");
 	
 	
-	if (ImGui::Button("OK")) {
+	if (ImGui::Button("OK", ImVec2(250, 0))) {
 		finalized = true;
 	}
 
@@ -1430,6 +1732,74 @@ void PolygonEditor::on_mouse_drag(int x, int y, const Line3D& ray, int current_o
 		{
 			Plane plane(clicked_v->to_point(), Vector3D(0, 0, 1));
 			clicked_v->move_to_ray(ray, &plane);
+
+			//
+			ImGuiIO& io = ImGui::GetIO();
+			if (io.KeyShift) {
+				scalar_t min_cos_th = 1;
+				Point3D org_ptr = clicked_v->to_point();
+				Point3D ptr = clicked_v->to_point();
+				if (io.KeyCtrl) {
+					for (int i = 0; i < clicked_v->num_shared_facets(); ++i) {
+						Facet *f = clicked_v->get_facet(i);
+						FacetVertex *fv = f->get_vertex(clicked_v);
+
+						scalar_t cos_th;
+
+						Vector3D ppv = fv->prev()->incoming_edge()->to_vector3();
+						Vector3D pv = fv->incoming_edge()->to_vector3();
+						cos_th = abs(pv.normalized().dot_product(ppv.normalized()));
+
+						Vector3D nnv = fv->next()->outgoing_edge()->to_vector3();
+						Vector3D nv = fv->outgoing_edge()->to_vector3();
+						cos_th += abs(nv.normalized().dot_product(nnv.normalized()));
+						
+						if (cos_th < min_cos_th) {
+							min_cos_th = cos_th;
+							
+							Vector3D hp = f->get_plane().h.cross_product(ppv).normalized();
+							Vector3D q_p = fv->next()->to_point3() - fv->prev()->to_point3();
+							Vector3D u = nnv.normalized();
+							if (abs(hp.dot_product(u)) < EPSILON) {
+								ptr = fv->prev()->to_point3() + 0.5 * q_p;
+							}
+							else {
+								alpha = q_p.dot_product(u) / hp.dot_product(u);
+								ptr = fv->prev()->to_point3() + alpha * hp;
+							}
+						}
+					}
+				}
+				else {
+					for (int i = 0; i < clicked_v->num_shared_facets(); ++i) {
+						Facet *f = clicked_v->get_facet(i);
+						FacetVertex *fv = f->get_vertex(clicked_v);
+
+						scalar_t cos_th;
+
+						Vector3D ppv = fv->prev()->incoming_edge()->to_vector3();
+						Vector3D pv = fv->incoming_edge()->to_vector3();
+						cos_th = abs(pv.normalized().dot_product(ppv.normalized()));
+						if (cos_th < min_cos_th) {
+							min_cos_th = cos_th;
+							ptr = org_ptr - pv.get_projection_component_to(ppv);
+						}
+
+						Vector3D nnv = fv->next()->outgoing_edge()->to_vector3();
+						Vector3D nv = fv->outgoing_edge()->to_vector3();
+						cos_th = abs(nv.normalized().dot_product(nnv.normalized()));
+						if (cos_th < min_cos_th) {
+							min_cos_th = cos_th;
+							ptr = org_ptr + nv.get_projection_component_to(nnv);
+						}
+					}
+				}
+
+				if (clicked_v->get_feasible_point_nearest_to_point(ptr, &org_ptr)) {
+					clicked_v->move_to(org_ptr);
+				}
+			}
+			//
 			clicked_v->triangulate_associated_facets();
 		}
 	}
@@ -1540,8 +1910,8 @@ void ConnectionEditor::make_ui(void) {
 
 	//ImGui::Checkbox("Door", &door);
 
-	if (ImGui::Button("OK")) finalized = true;
-	if (ImGui::Button("Cancel")) canceled = true;
+	if (ImGui::Button("OK", ImVec2(250, 0))) finalized = true;
+	if (ImGui::Button("Cancel", ImVec2(250, 0))) canceled = true;
 	ImGui::End();
 }
 void ConnectionEditor::on_mouse_down(int x, int y, const Line3D& ray, int current_obj) {

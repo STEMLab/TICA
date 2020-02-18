@@ -120,12 +120,9 @@ void World::make_cellspaces(void) {
 
 	// CONNECTIONS
 	for (int i = 0; i < connections.size(); ++i) {
-		if (!connections[i].fbase_opposite) continue;
-
 		if (connections[i].get_normal_of_ring().dot_product(connections[i].fbase->get_plane().h) < 0) {
 			connections[i].reverse();
 		}
-
 		vector<Vertex*> boundary_to_base_facet;
 		for (int j = 0; j < connections[i].ring.size(); ++j) {
 			coord_t x, y, z;
@@ -140,12 +137,25 @@ void World::make_cellspaces(void) {
 		f_boundary_to_base_facet->triangulate();
 
 		vector<Vertex*> boundary_to_opposite_facet;
-		for (int j = 0; j < connections[i].ring.size(); ++j) {
-			Plane plane = connections[i].fbase_opposite->get_plane();
-			Point3D p(connections[i].ring[j].x, connections[i].ring[j].y, connections[i].ring[j].z);
-			p = plane.project(p);
-			Vertex* v = new Vertex(p.x,p.y,p.z);
-			boundary_to_opposite_facet.push_back(v);
+		if (connections[i].fbase_opposite) {
+			for (int j = 0; j < connections[i].ring.size(); ++j) {
+				Plane plane = connections[i].fbase_opposite->get_plane();
+				Point3D p(connections[i].ring[j].x, connections[i].ring[j].y, connections[i].ring[j].z);
+				p = plane.project(p);
+				Vertex* v = new Vertex(p.x, p.y, p.z);
+				boundary_to_opposite_facet.push_back(v);
+			}
+		}
+		else {
+			for (int j = 0; j < connections[i].ring.size(); ++j) {
+				//Plane plane = connections[i].fbase_opposite->get_plane();
+				Vector3D plane_normal = connections[i].fbase->get_plane().h.normalized();
+				Plane plane(connections[i].fbase->get_plane().p - plane_normal * 0.1, -1 * plane_normal);
+				Point3D p(connections[i].ring[j].x, connections[i].ring[j].y, connections[i].ring[j].z);
+				p = plane.project(p);
+				Vertex* v = new Vertex(p.x, p.y, p.z);
+				boundary_to_opposite_facet.push_back(v);
+			}
 		}
 		Facet *f_boundary_to_opposite_facet = Facet::create_facet(boundary_to_opposite_facet);
 		f_boundary_to_opposite_facet->triangulate();
@@ -163,7 +173,12 @@ void World::make_cellspaces(void) {
 		// 이 시점에서 boundary_to_base_facet와 boundary_to_opposite_facet는 서로 반대편을 바라보고 있다.
 
 		CellSpace *c = new CellSpace();
-		c->cellspace_type = CellSpace::TYPE_CELLSPACE::TYPE_DOOR;
+		if (connections[i].fbase_opposite) {
+			c->cellspace_type = CellSpace::TYPE_CELLSPACE::TYPE_DOOR;
+		}
+		else {
+			c->cellspace_type = CellSpace::TYPE_CELLSPACE::TYPE_EXTERIORDOOR;
+		}
 		c->facets.push_back(f_boundary_to_base_facet);
 		c->facets.push_back(f_boundary_to_opposite_facet);
 		for (int i = 0; i < side_facets.size(); ++i) {
@@ -183,88 +198,60 @@ void World::make_cellspaces(void) {
 		c->duality = s;
 		base_layer->states.push_back(s);
 
-		Transition *t_bm = new Transition();
-		t_bm->u = s;
-		t_bm->v = belongs_to.at(connections[i].fbase)->duality;
-		belongs_to.at(connections[i].fbase)->duality->connects.push_back(t_bm);
-		s->connects.push_back(t_bm);
+		if(1) {
+			Transition *t_bm = new Transition();
+			t_bm->u = s;
+			t_bm->v = belongs_to.at(connections[i].fbase)->duality;
+			belongs_to.at(connections[i].fbase)->duality->connects.push_back(t_bm);
+			s->connects.push_back(t_bm);
+			base_layer->transitions.push_back(t_bm);
 
-		Transition *t_mo = new Transition();
-		t_mo->u = s;
-		t_mo->v = belongs_to.at(connections[i].fbase_opposite)->duality;
-		belongs_to.at(connections[i].fbase_opposite)->duality->connects.push_back(t_mo);
-		s->connects.push_back(t_mo);
+			// corresponding CellSpaceBoundary's
+			CellSpaceBoundary *boundary_on_base_towards_middle = new CellSpaceBoundary();
+			boundary_on_base_towards_middle->cellspace = t_bm->v->duality;
+			boundary_on_base_towards_middle->ring = boundary_to_base_facet;
+			boundary_on_base_towards_middle->duality = t_bm;
+			t_bm->forward_duality = boundary_on_base_towards_middle;
+			boundary_on_base_towards_middle->cellspace->boundaries.push_back(boundary_on_base_towards_middle);
 
-		base_layer->transitions.push_back(t_bm);
-		base_layer->transitions.push_back(t_mo);
+			CellSpaceBoundary *boundary_on_middle_towards_base = new CellSpaceBoundary();
+			boundary_on_middle_towards_base->cellspace = t_bm->u->duality;
+			boundary_on_middle_towards_base->ring = boundary_to_base_facet;
+			reverse(boundary_on_middle_towards_base->ring.begin(), boundary_on_middle_towards_base->ring.end());
+			boundary_on_middle_towards_base->duality = t_bm;
+			t_bm->reverse_duality = boundary_on_middle_towards_base;
+			boundary_on_middle_towards_base->cellspace->boundaries.push_back(boundary_on_middle_towards_base);
+		}
 
-		// corresponding CellSpaceBoundary's
-		CellSpaceBoundary *boundary_on_base_towards_middle = new CellSpaceBoundary();
-		boundary_on_base_towards_middle->cellspace = t_bm->v->duality;
-		boundary_on_base_towards_middle->ring = boundary_to_base_facet;
-		boundary_on_base_towards_middle->duality = t_bm;
-		t_bm->forward_duality = boundary_on_base_towards_middle;
-		boundary_on_base_towards_middle->cellspace->boundaries.push_back(boundary_on_base_towards_middle);
+		if(connections[i].fbase_opposite) {
+			Transition *t_mo = new Transition();
+			t_mo->u = s;
+			t_mo->v = belongs_to.at(connections[i].fbase_opposite)->duality;
+			belongs_to.at(connections[i].fbase_opposite)->duality->connects.push_back(t_mo);
+			s->connects.push_back(t_mo);
+			base_layer->transitions.push_back(t_mo);
 
-		CellSpaceBoundary *boundary_on_middle_towards_base = new CellSpaceBoundary();
-		boundary_on_middle_towards_base->cellspace = t_bm->u->duality;
-		boundary_on_middle_towards_base->ring = boundary_to_base_facet;
-		reverse(boundary_on_middle_towards_base->ring.begin(), boundary_on_middle_towards_base->ring.end());
-		boundary_on_middle_towards_base->duality = t_bm;
-		t_bm->reverse_duality = boundary_on_middle_towards_base;
-		boundary_on_middle_towards_base->cellspace->boundaries.push_back(boundary_on_middle_towards_base);
+			CellSpaceBoundary *boundary_on_opposite_towards_middle = new CellSpaceBoundary();
+			boundary_on_opposite_towards_middle->cellspace = t_mo->v->duality;
+			boundary_on_opposite_towards_middle->ring = boundary_to_opposite_facet;
+			boundary_on_opposite_towards_middle->duality = t_mo;
+			t_mo->forward_duality = boundary_on_opposite_towards_middle;
+			boundary_on_opposite_towards_middle->cellspace->boundaries.push_back(boundary_on_opposite_towards_middle);
 
-		CellSpaceBoundary *boundary_on_opposite_towards_middle = new CellSpaceBoundary();
-		boundary_on_opposite_towards_middle->cellspace = t_mo->v->duality;
-		boundary_on_opposite_towards_middle->ring = boundary_to_opposite_facet;
-		boundary_on_opposite_towards_middle->duality = t_mo;
-		t_mo->forward_duality = boundary_on_opposite_towards_middle;
-		boundary_on_opposite_towards_middle->cellspace->boundaries.push_back(boundary_on_opposite_towards_middle);
-
-		CellSpaceBoundary *boundary_on_middle_towards_opposite = new CellSpaceBoundary();
-		boundary_on_middle_towards_opposite->cellspace = t_mo->u->duality;
-		boundary_on_middle_towards_opposite->ring = boundary_to_opposite_facet;
-		reverse(boundary_on_middle_towards_opposite->ring.begin(), boundary_on_middle_towards_opposite->ring.end());
-		boundary_on_middle_towards_opposite->duality = t_mo;
-		t_mo->reverse_duality = boundary_on_middle_towards_opposite;
-		boundary_on_middle_towards_opposite->cellspace->boundaries.push_back(boundary_on_middle_towards_opposite);
-
-		/*CellSpaceBoundary *boundary_on_base_towards_middle = new CellSpaceBoundary();
-		boundary_on_base_towards_middle->cellspace = t_bm->u->duality;
-		boundary_on_base_towards_middle->ring = boundary_to_base_facet;
-		reverse(boundary_on_base_towards_middle->ring.begin(), boundary_on_base_towards_middle->ring.end());
-		boundary_on_base_towards_middle->duality = t_bm;
-		t_bm->forward_duality = boundary_on_base_towards_middle;
-		boundary_on_base_towards_middle->cellspace->boundaries.push_back(boundary_on_base_towards_middle);
-
-		CellSpaceBoundary *boundary_on_middle_towards_base = new CellSpaceBoundary();
-		boundary_on_middle_towards_base->cellspace = t_bm->v->duality;
-		boundary_on_middle_towards_base->ring = boundary_to_base_facet;
-		boundary_on_middle_towards_base->duality = t_bm;
-		t_bm->reverse_duality = boundary_on_middle_towards_base;
-		boundary_on_middle_towards_base->cellspace->boundaries.push_back(boundary_on_middle_towards_base);
-
-		CellSpaceBoundary *boundary_on_opposite_towards_middle = new CellSpaceBoundary();
-		boundary_on_opposite_towards_middle->cellspace = t_mo->u->duality;
-		boundary_on_opposite_towards_middle->ring = boundary_to_base_facet;
-		reverse(boundary_on_opposite_towards_middle->ring.begin(), boundary_on_opposite_towards_middle->ring.end());
-		boundary_on_opposite_towards_middle->duality = t_mo;
-		t_mo->forward_duality = boundary_on_opposite_towards_middle;
-		boundary_on_opposite_towards_middle->cellspace->boundaries.push_back(boundary_on_opposite_towards_middle);
-
-		CellSpaceBoundary *boundary_on_middle_towards_opposite = new CellSpaceBoundary();
-		boundary_on_middle_towards_opposite->cellspace = t_mo->v->duality;
-		boundary_on_middle_towards_opposite->ring = boundary_to_base_facet;
-		boundary_on_middle_towards_opposite->duality = t_mo;
-		t_mo->reverse_duality = boundary_on_middle_towards_opposite;
-		boundary_on_middle_towards_opposite->cellspace->boundaries.push_back(boundary_on_middle_towards_opposite);
-		*/
+			CellSpaceBoundary *boundary_on_middle_towards_opposite = new CellSpaceBoundary();
+			boundary_on_middle_towards_opposite->cellspace = t_mo->u->duality;
+			boundary_on_middle_towards_opposite->ring = boundary_to_opposite_facet;
+			reverse(boundary_on_middle_towards_opposite->ring.begin(), boundary_on_middle_towards_opposite->ring.end());
+			boundary_on_middle_towards_opposite->duality = t_mo;
+			t_mo->reverse_duality = boundary_on_middle_towards_opposite;
+			boundary_on_middle_towards_opposite->cellspace->boundaries.push_back(boundary_on_middle_towards_opposite);
+		}
 	}
 
 	// NON-NAVIGABLES
 	Layer* nonnavi_layer = new Layer();
 	for (int i = 0; i < objects.size(); ++i) {
-		cout << "OBJECT" << endl;
+		//cout << "OBJECT" << endl;
 		Point3D p = objects[i].bounding_box.min;
 		Point3D q = objects[i].bounding_box.max;
 		

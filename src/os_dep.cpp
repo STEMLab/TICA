@@ -1,7 +1,11 @@
+
+#define _CRT_SECURE_NO_WARNINGS
 #include <direct.h>
 #include <Windows.h>
 #include <string>
 #include <cstdio>
+#include <iostream>
+using namespace std;
 std::string open_file_browser(const std::string & path, bool save, const std::string& ext) {
 	OPENFILENAMEA fn = { 0, };
 	char buf[1024];
@@ -22,6 +26,10 @@ std::string open_file_browser(const std::string & path, bool save, const std::st
 	if (save) {
 		//fn.Flags = OFN_OVERWRITEPROMPT;
 		GetSaveFileNameA(&fn);
+		if ( *buf && fn.nFileExtension == 0) {
+			strcat(buf, ".");
+			strcat(buf, ext.c_str());
+		}
 	}
 	else {
 		fn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
@@ -36,4 +44,8 @@ std::string get_executable_path(void) {
 	std::string path(buf);
 	size_t pos = path.find_last_of("/\\");
 	return path.substr(0, pos);
+}
+
+void message_box(const string& msg) {
+	MessageBoxA(NULL, msg.c_str(), "Info", NULL);
 }

@@ -25,6 +25,22 @@ struct DrawSetting {
 	virtual bool begin_facetedge(int, FacetEdge*) = 0;
 };
 
+class SubspaceFilter {
+public:
+	SubspaceFilter(void);
+	SubspaceFilter(const Plane& p);
+	SubspaceFilter(const Line3D& l);
+
+	bool projection(const Point3D& p, Point3D* _ret, const Vector3D& projectionVector = Vector3D(0, 0, 0)) const;
+
+	bool add_plane(const Plane& p, bool invalidate = false);
+
+	int dof;
+	Point3D point;
+	Line3D line;
+	Plane plane;
+};
+
 class Vertex {
 public:
 	friend class Facet;
@@ -117,10 +133,13 @@ private:
 class Facet {
 public:
 	void release(std::vector<Vertex*> *pts=0);
+
 	void triangulate(void);
+	
 	void draw(DrawSetting* d = 0, int idx = 0) ;
 	void draw_edge(DrawSetting* d = 0) ;
 	void draw_vertex(DrawSetting* d = 0) ;
+	int winding_number(const Point3D& p) const;
 
 	static Facet* create_facet(Vertex* v1, Vertex* v2, Vertex* v3);
 	static Facet* create_facet(Vertex* v1, Vertex* v2, Vertex* v3, Vertex* v4); 
@@ -137,6 +156,7 @@ public:
 
 	FacetEdge* get_exteior_edge(void) const;
 	FacetEdge* get_hole_edge(int i) const;
+
 	int num_edges(void) const;
 	int num_holes(void) const;
 	int num_vertices(void) const;
@@ -162,6 +182,7 @@ public:
 
 	bool planarize(void);
 
+	void set_plane(const Plane& p);
 	Plane get_plane(void) const;
 
 private:

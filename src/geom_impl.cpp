@@ -92,6 +92,10 @@ length_t Vector3D::length(void) const {
 	return sqrt(dot_product(*this));
 
 }
+length_t Vector3D::length_square(void) const {
+	return dot_product(*this);
+
+}
 Vector3D Vector3D::rotate(const Vector3D& q, radian_t theta) const {
 
 	scalar_t rx = sin(theta / 2) * q.x;

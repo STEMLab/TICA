@@ -39,5 +39,15 @@ struct ConnectionBasicViewer : public Controller {
 
 	int current_selected_obj;
 
+	Facet *f_front, *f_back;
+
+	bool valid_connection;
+	Connection current_connection;
+
 	Controller* next;
+
+	static float door_baseoffset;
+	static float door_width;
+	static float door_height;
+	
 };

@@ -3,7 +3,7 @@
 #include <vector>
 
 Camera::Camera(void)
-	:center(0, 0, 0), yaw(0), pitch(0), th_near(0.1), th_far(1000.0)
+	:center(6.5, 3.75, 9.8), yaw(0.85), pitch(-0.9), th_near(0.1), th_far(1000.0)
 {
 
 }
@@ -55,7 +55,6 @@ void Camera::applyViewMatrix(void) const {
 
 ///////////////////////////////////////////////////////////////////////
 
-
 RenderBuffer::RenderBuffer(void) :frameBufferID(-1), textureID(-1), depthBufferID(-1), width(0), height(0), buffer_width(0), buffer_height(0) { ; }
 
 void RenderBuffer::clear(void) {
@@ -73,7 +72,8 @@ void RenderBuffer::clear(void) {
 		textureID = -1;
 	}
 	if (depthBufferID != -1) {
-		glDeleteRenderbuffers(1, &depthBufferID);
+		//glDeleteRenderbuffers(1, &depthBufferID);
+		glDeleteTextures(1, &depthBufferID);
 		depthBufferID = -1;
 	}
 
@@ -106,19 +106,24 @@ void RenderBuffer::create(int w, int h) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-	glGenRenderbuffers(1, &depthBufferID);
-	glBindRenderbuffer(GL_RENDERBUFFER, depthBufferID);
-	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, w, h);
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBufferID);
-	
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureID, 0);
 	GLenum db[1] = { GL_COLOR_ATTACHMENT0 };
 	glDrawBuffers(1, db);
 
+	//glGenRenderbuffers(1, &depthBufferID);
+	//glBindRenderbuffer(GL_RENDERBUFFER, depthBufferID);
+	//glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, w, h);
+	//glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBufferID);
+	glGenTextures(1, &depthBufferID);
+	glBindTexture(GL_TEXTURE_2D, depthBufferID);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, w, h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthBufferID, 0);
+
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	//glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-	//glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-	//glBindRenderbuffer(GL_RENDERBUFFER, 0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
@@ -159,6 +164,9 @@ void RenderBuffer::unbind(void) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+void RenderBuffer::bind_depthbuffer(void) {
+	glBindTexture(GL_TEXTURE_2D, depthBufferID);
+}
 
 
 
@@ -169,10 +177,12 @@ Shader::Shader(void) :program(-1), vs(-1), fs(-1) { ; }
 void Shader::clear(void) {
 	if (vs != -1) {
 		glDetachShader(program, vs);
+		glDeleteShader(vs);
 		vs = -1;
 	}
 	if (fs != -1) {
 		glDetachShader(program, fs);
+		glDeleteShader(fs);
 		fs = -1;
 	}
 	if (program != -1) {

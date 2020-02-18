@@ -22,6 +22,10 @@ static radian_t base_yaw = 0.0;
 static radian_t base_pitch = 0.0;
 static RenderBuffer render_buffer;
 
+Point3D get_camera_pos(void) {
+	return cam.center;
+}
+
 World w;
 World* Controller::world = &w;
 
@@ -80,7 +84,7 @@ static void io(int w, int h) {
 		if (io.KeysDown['D']) { cam_dy += 1; }
 		if (io.KeysDown['T']) { cam_dz += 1; }
 		if (io.KeysDown['G']) { cam_dz -= 1; }
-		if (ImGui::IsKeyPressed(GLFW_KEY_DELETE,false))  { cout << "DEL!" << endl; }
+		//if (ImGui::IsKeyPressed(GLFW_KEY_DELETE,false))  { cout << "DEL!" << endl; }
 		Vector3D mov_vec(cam_dx, cam_dy, cam_dz);
 		scalar_t speed = (current_t - last_t) * (io.KeyShift ? 15 : 3);
 		cam.center = cam.center + cam.transform(mov_vec) * speed;
@@ -166,12 +170,67 @@ int CurrentCubTexIndex = 0;
 bool cub_texturing = false;
 bool cub_nearest_cam = false;
 
-PointCloud *pc = 0;
-bool __temp_showPC = false;
-int __temp_PCSize = 1;
-float __temp_PCAlpha = 0.1;
-string __temp_pc_filename;
-string __temp_cubtex_filename;
+static PointCloud *pc = 0;
+static bool __temp_showPC = false;
+static int __temp_PCSize = 1;
+static float __temp_PCAlpha = 0.1;
+static float __temp_PCX = 0.0;
+static float __temp_PCY = 0.0;
+static float __temp_PCZ = 0.0;
+static float __temp_PCSZ = 1.0;
+static float __temp_PCTh = 0.0;
+static string __temp_pc_filename;
+static string __temp_cubtex_filename;
+
+static Shader shader_wall_based_pointcloud_visualizaer;
+static float shader_wall_based_pointcloud_visualizaer__Theta = 0.2;
+static int shader_no = 0;
+
+static void init_shader(void) {
+	shader_wall_based_pointcloud_visualizaer.create(0,
+		"#version 120\n"
+		"uniform sampler2D tex;\n"
+		"uniform vec4 WindowSize;\n"
+		"uniform vec2 FilterParam;\n"
+		"void main() { "
+		"float color = texture2D(tex,vec2(gl_FragCoord.x/WindowSize.x,gl_FragCoord.y/WindowSize.y)).r;"
+		"float near = WindowSize.z;"
+		"float far = WindowSize.w;"
+		"float depth_plane = (2.0*near*far)/(far+near-color*(far-near));"
+		"float depth_ptr = (2.0*near*far)/(far+near-gl_FragCoord.z*(far-near));"
+		"if(abs(depth_ptr-depth_plane)>FilterParam.x) {"
+		"discard;"
+		"}"
+		"float d=0.5+(depth_ptr-depth_plane)/(2*FilterParam.x);"
+		"gl_FragColor=vec4(d,1-d,0,FilterParam.y);"
+		"}");
+}
+
+static void bind_shader(void) {
+	if (!pc) return;
+	if (!__temp_showPC) return;
+	if (shader_no == 0) return;
+
+	if (shader_no == 1) {
+		glDisable(GL_DEPTH_TEST);
+		render_buffer.bind_depthbuffer();
+		shader_wall_based_pointcloud_visualizaer.use();
+
+		int uniform_WindowSize = glGetUniformLocation(shader_wall_based_pointcloud_visualizaer.program, "WindowSize");
+		glUniform4f(uniform_WindowSize, render_buffer.width, render_buffer.height, cam.th_near, cam.th_far);
+		int uniform_FilterParam = glGetUniformLocation(shader_wall_based_pointcloud_visualizaer.program, "FilterParam");
+		glUniform2f(uniform_FilterParam, shader_wall_based_pointcloud_visualizaer__Theta, __temp_PCAlpha);
+	}
+}
+
+static void unbind_shader(void) {
+	glUseProgram(0);
+
+	if (shader_no == 1) {
+		glEnable(GL_DEPTH_TEST);
+		render_buffer.unbind();	
+	}
+}
 
 string getdir(const string& path) {
 	size_t last_slash = path.find_last_of("/\\");
@@ -272,7 +331,7 @@ void __temp_load_cubemap_texture(const string& filename) {
 		GLfloat x = r[0] * r[3] + s[0] * s[3] + t[0] * t[3];
 		GLfloat y = r[1] * r[3] + s[1] * s[3] + t[1] * t[3];
 		GLfloat z = r[2] * r[3] + s[2] * s[3] + t[2] * t[3];
-		cout << x << ',' << y << ',' << z << endl;
+		//cout << x << ',' << y << ',' << z << endl;
 		cubtex_center.push_back(Point3D(-x, -y, -z));
 	}
 }
@@ -412,8 +471,8 @@ void __temp_save_geometry(const string& filename) {
 	out.close();
 }
 
-void __temp_save_connection(void) {
-	ofstream out("connection.dat");
+void __temp_save_connection_with_index(const string& fname) {
+	ofstream out(fname);
 	for (int i = 0; i < w.connections.size(); ++i) {
 		int basefacet_i = -1;
 		for (int j = 0; j < w.facets.size(); ++j) {
@@ -439,9 +498,53 @@ void __temp_save_connection(void) {
 	out.close();
 }
 
+void __temp_save_connection(const string& fname) {
+	ofstream out(fname);
+	for (int i = 0; i < w.connections.size(); ++i) {
+		out << w.connections[i].ring.size();
+		for (int j = 0; j != w.connections[i].ring.size(); ++j) {
+			out << ' ' << w.connections[i].ring[j].x << ' ' << w.connections[i].ring[j].y << ' ' << w.connections[i].ring[j].z;
+		}
+		if (w.connections[i].fbase_opposite) {
+			out << ' ' << w.connections[i].ring.size();
+			Plane Popp = w.connections[i].fbase_opposite->get_plane();
+			for (int j = 0; j != w.connections[i].ring.size(); ++j) {
+				Point3D p_proj = Popp.project(w.connections[i].ring[j]);
+				out << ' ' <<  p_proj.x << ' ' << p_proj.y << ' ' << p_proj.z;
+			}
+		}
+		else {
+			out << ' ' << -1;
+		}
+		out << endl;
+	}
+	out.close();
+}
 
-void __temp_load_connection(void) {
-	ifstream in("connection.dat");
+
+template <class T>
+static pair<bool,pair<T,T> > distance_bound_between_connection_and_facet(const Connection& c, Facet *f) {
+	bool in = true;
+	T m = 0, M = 0;
+	Plane plane = f->get_plane();
+	plane.h = plane.h.normalized();
+	for (int i = 0; i < (int)c.ring.size(); ++i) {
+		float alpha;
+		interp(c.ring[i], plane, &alpha);
+		T d = alpha;
+		if (alpha < m || i == 0) m = alpha;
+		if (M < alpha || i == 0) M = alpha;
+		
+		Point3D p_proj = c.ring[i] - alpha * plane.h;
+		if (f->winding_number(p_proj) % 2 == 0) {
+			in = false;
+		}
+	}
+	return make_pair( in, make_pair(m, M) );
+}
+
+void __temp_load_connection_with_index(const string& fname) {
+	ifstream in(fname);
 	int i, j;
 	w.connections.clear();
 	while (in >> i >> j) {
@@ -452,16 +555,96 @@ void __temp_load_connection(void) {
 		c.fbase_opposite = 0;
 		if (0 <= i && i < w.facets.size()) c.fbase = w.facets[i];
 		if (0 <= j && j < w.facets.size()) c.fbase_opposite = w.facets[j];
+
 		Plane plane = c.fbase->get_plane();
+		//coord_t cx = 0, cy = 0, cz = 0;
 		for (int k = 0; k < m; ++k) {
 			coord_t x, y, z;
 			if (in >> x >> y >> z) {
+				//c.ring.push_back(Point3D(x, y, z));
 				c.ring.push_back(plane.project(Point3D(x, y, z)));
+				//cx += x; cy += y; cz += z;
 			}
 		}
+		//cx /= m; cy /= m; cz /= m;
+
 		w.connections.push_back(c);
 	}
 	in.close();
+}
+
+void __temp_load_connection(const string& fname) {
+	ifstream in(fname);
+	int m;
+	w.connections.clear();
+	while (in >> m) {
+		Connection c;
+		for (int k = 0; k < m; ++k) {
+			coord_t x, y, z;
+			if (in >> x >> y >> z) {
+				c.ring.push_back(Point3D(x, y, z));
+			}
+		}
+		{
+			Facet *f_base = 0;
+			scalar_t d_min;
+			Vector3D normal = c.get_normal_of_ring().normalized();
+			for (int i = 0; i < w.facets.size(); ++i) {
+				if (abs(w.facets[i]->get_plane().h.normalized().dot_product(normal)) < 0.9) continue;
+				pair<bool, pair<float, float> > ret = distance_bound_between_connection_and_facet<float>(c, w.facets[i]);
+				if (ret.first == false) continue;
+				float d = abs(ret.second.first) > abs(ret.second.second) ? abs(ret.second.first) : abs(ret.second.second);
+				if (d > 0.05) continue;
+				if (!f_base || d < d_min) {
+					d_min = d;
+					f_base = w.facets[i];
+				}
+			}
+			c.fbase = f_base;
+
+			if (!c.fbase) {
+				cerr << "CANNOT FIND FACET" << endl;
+			}
+		}
+
+		c.fbase_opposite = 0;
+		in >> m;
+		if (m > 0) {
+			Connection c_opposite;
+			for (int k = 0; k < m; ++k) {
+				coord_t x, y, z;
+				if (in >> x >> y >> z) {
+					c_opposite.ring.push_back(Point3D(x, y, z));
+				}
+			}
+			if (c.fbase) {
+				Facet *f_opposite = 0;
+				scalar_t d_min;
+				Vector3D normal = c_opposite.get_normal_of_ring().normalized();
+				for (int i = 0; i < w.facets.size(); ++i) {
+					if (c.fbase->get_plane().h.dot_product(w.facets[i]->get_plane().h) > 0) continue;
+					if (abs(w.facets[i]->get_plane().h.normalized().dot_product(normal)) < 0.9) continue;
+
+					pair<bool, pair<float, float> > ret = distance_bound_between_connection_and_facet<float>(c_opposite, w.facets[i]);
+					if (ret.first == false) continue;
+					float d = abs(ret.second.first) > abs(ret.second.second) ? abs(ret.second.first) : abs(ret.second.second);
+					if (d > 0.05) continue;
+					if (!f_opposite || d < d_min) {
+						d_min = d;
+						f_opposite = w.facets[i];
+					}
+				}
+				c.fbase_opposite = f_opposite;
+			}
+
+
+			if (!c.fbase_opposite) {
+				cerr << "CANNOT FIND OPPOSITE FACET" << endl;
+			}
+		}
+
+		if (c.fbase) w.connections.push_back(c);
+	}
 }
 
 void init(void) {
@@ -475,17 +658,112 @@ void init(void) {
 
 	//__temp_load_geometry();
 	//__temp_load_pcd_obj();
+	init_shader();
 
 	Controller::current_controller = new MainViewer(0);
 }
 
 #include "InFactoryQueryBuilder.h"
-void __temp_infactory_builder_test(const string& filename, bool _t) {
-	InFactoryQueryBuilder builder;
-	builder.add_world(w);
-	builder.build(_t);
-	{
-		ofstream out(filename);
+#include <curl/curl.h>
+
+struct fetch_st {
+	char* payload;
+	size_t size;
+};
+
+size_t curl_callback(void *ptr, size_t size, size_t nmemb, void *our_ptr) {
+	size_t addsize = size * nmemb;
+	fetch_st *p = (fetch_st*) our_ptr;
+
+	p->payload = (char*)realloc(p->payload, p->size + addsize + 1);
+
+	memcpy(p->payload + p->size, ptr, addsize);
+	p->size += addsize;
+	p->payload[p->size] = 0;
+
+	return addsize;
+}
+
+void __temp_export_to_indoorGML(void) {
+	string fname = open_file_browser("", true, "gml");
+	if (!fname.empty()) {
+		curl_global_init(CURL_GLOBAL_ALL);
+		CURL* curl = curl_easy_init();
+
+		curl_slist* post_headers = NULL;
+		post_headers = curl_slist_append(post_headers, "Accept: application/json");
+		post_headers = curl_slist_append(post_headers, "Content-Type: application/json");
+
+		fetch_st fetcher;
+		fetcher.payload = (char*) malloc(1);
+		fetcher.size = 0;
+
+		InFactoryQueryBuilder builder;
+		builder.add_world(w);
+		builder.build(false);
+		for (int i = 0; i < builder.query.size(); ++i) {
+			builder.query[i].url;
+			builder.query[i].data;
+
+			fetcher.size = 0;
+			curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
+			curl_easy_setopt(curl, CURLOPT_URL, builder.query[i].url.c_str());
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, builder.query[i].data.c_str());
+			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, post_headers);
+			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_callback);
+			curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)& fetcher);
+
+			CURLcode ret = curl_easy_perform(curl);
+			cout << "Querying: " << i << ", RET=" << ret << endl;
+			if (ret != CURLE_OK) {
+				message_box("통신 실패: InFactory가 정상적으로 실행 중인지 확인해주세요");
+				return;
+			}
+		}
+
+		cout << "Query Sent" << endl;
+
+		long delay = 1;
+		while(1) {
+			cout << "Requesting IndoorGML..." << endl;
+			fetcher.size = 0;
+			curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET");
+			curl_easy_setopt(curl, CURLOPT_URL, builder.query[0].url.c_str());
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, 0);
+			curl_easy_setopt(curl, CURLOPT_HTTPHEADER, 0);
+			curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_callback);
+			curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)& fetcher);
+			curl_easy_setopt(curl, CURLOPT_TIMEOUT, delay);
+
+			//cout << "READY" << endl;
+			CURLcode ret = curl_easy_perform(curl);
+			if (ret != CURLE_OK) {
+				if( delay < 60 ) delay *= 2;
+				continue;
+			}
+			cout << "Complete: " << ret << ", size=" << fetcher.size << endl;
+			ofstream out(fname);
+			out << fetcher.payload << endl;
+			out.close();
+			message_box("IndoorGML 생성 완료");
+			break;
+		}
+
+		free(fetcher.payload);
+
+		curl_slist_free_all(post_headers);
+		curl_easy_cleanup(curl);
+		curl_global_cleanup();
+	}
+}
+
+void __temp_export_to_inFactory_query(void) {
+	string fname = open_file_browser("", true, "txt");
+	if (!fname.empty()) {
+		InFactoryQueryBuilder builder;
+		builder.add_world(w);
+		builder.build(false);
+		ofstream out(fname);
 		for (int i = 0; i < builder.query.size(); ++i) {
 			out << builder.query[i].url << endl;
 			out << builder.query[i].data << endl;
@@ -494,12 +772,6 @@ void __temp_infactory_builder_test(const string& filename, bool _t) {
 	}
 }
 
-void __temp_export_to_indoorGML(void) {
-	string fname = open_file_browser("", true, "txt");
-	if (!fname.empty()) {
-		__temp_infactory_builder_test(fname, false);
-	}
-}
 
 void make_ui(void) {
 	ImGui::Begin("Info");
@@ -509,37 +781,81 @@ void make_ui(void) {
 		int state = Controller::current_controller->get_current_stage();
 		if (state == 0) {
 
-			if (ImGui::Button("Go to State Editor")) {
-				w.make_cellspaces();
-				Controller::current_controller = new StateMainController(0);
+			if (ImGui::Button("Go to Connection Editor", ImVec2(350, 50))) {
+				Controller::current_controller = new ConnectionBasicViewer(0);
 			}
 			ImGui::Text("");
-			if (ImGui::Button("Load Geometry")) {
+			if (ImGui::Button("Load Geometry", ImVec2(250, 0))) {
 				string fname = open_file_browser("", false, "geom");
 				if (!fname.empty()) {
 					__temp_load_geometry(fname);
 				}
 			}
-			if (ImGui::Button("Save Geometry")) {
+			if (ImGui::Button("Save Geometry", ImVec2(250, 0))) {
 				string fname = open_file_browser("", true, "geom");
 				if (!fname.empty()) {
 					__temp_save_geometry(fname);
 				}
 			}
 			ImGui::Text("");
-			if (ImGui::Button("Load PCD File List for Obstacles (Loaded as MBBs)")) {
+			/*if (ImGui::Button("Load PCD File List for Obstacles (Loaded as MBBs)")) {
 				string fname = open_file_browser("", false, "txt");
 				if (!fname.empty()) {
 					__temp_load_pcd_obj(fname);
 				}
+			}*/
+		}
+		else if (state == 1) {
+			if (ImGui::Button("Go to State Editor", ImVec2(350, 50))) {
+				w.make_cellspaces();
+				Controller::current_controller = new StateMainController(0);
+			}
+			ImGui::Text("");
+			if (ImGui::Button("Load Geometry", ImVec2(250, 0))) {
+				string fname = open_file_browser("", false, "geom");
+				if (!fname.empty()) {
+					w.clear();
+					__temp_load_geometry(fname);
+					Controller::current_controller = new MainViewer(0);
+				}
+			}
+			if (ImGui::Button("Save Geometry", ImVec2(250, 0))) {
+				string fname = open_file_browser("", true, "geom");
+				if (!fname.empty()) {
+					__temp_save_geometry(fname);
+				}
+			}
+			ImGui::Text("");
+			if (ImGui::Button("Load Connections", ImVec2(250, 0))) {
+				string fname = open_file_browser("", true, "conn");
+				if (!fname.empty()) {
+					__temp_load_connection(fname);
+				}
+			}
+			if (ImGui::Button("Save Connections", ImVec2(250, 0))) {
+				string fname = open_file_browser("", true, "conn");
+				if (!fname.empty()) {
+					__temp_save_connection(fname);
+				}
 			}
 		}
 		else if (state == 2) {
-			if (ImGui::Button("Export InFactory Query")) {
+			if (ImGui::Button("Export to IndoorGML (InFactory)", ImVec2(350, 50))) {
 				__temp_export_to_indoorGML();
 			}
+			if (ImGui::Button("Export InFactory Query", ImVec2(350, 50))) {
+				__temp_export_to_inFactory_query();
+			}
 			ImGui::Text("");
-			if (ImGui::Button("Save Geometry")) {
+			if (ImGui::Button("Load Geometry", ImVec2(250, 0))) {
+				string fname = open_file_browser("", false, "geom");
+				if (!fname.empty()) {
+					w.clear();
+					__temp_load_geometry(fname);
+					Controller::current_controller = new MainViewer(0);
+				}
+			}
+			if (ImGui::Button("Save Geometry", ImVec2(250, 0))) {
 				string fname = open_file_browser("", true, "geom");
 				if (!fname.empty()) {
 					__temp_save_geometry(fname);
@@ -553,54 +869,68 @@ void make_ui(void) {
 	ImGui::End();
 
 	ImGui::Begin("PointCloud & Texture");
-	if (ImGui::Button("PCD File")) {
-		// load pcd file
-		string fname = open_file_browser("", false, "pcd");
-		if (!fname.empty()) {
-			__temp_pc_filename = get_filename(fname);
-			__temp_load_pointcloud(fname);
+	if (ImGui::TreeNode("Point Cloud")) {
+		if (ImGui::Button("PCD File")) {
+			// load pcd file
+			string fname = open_file_browser("", false, "pcd");
+			if (!fname.empty()) {
+				__temp_pc_filename = get_filename(fname);
+				__temp_load_pointcloud(fname);
+			}
 		}
+		ImGui::SameLine();
+		ImGui::Text("%s", __temp_pc_filename.c_str());
+		ImGui::Checkbox("Show Point Cloud", &__temp_showPC);
+		//ImGui::SliderFloat(
+		ImGui::SliderInt("Point Cloud Size", &__temp_PCSize, 1, 10);
+		ImGui::SliderFloat("Point Cloud Alpha", &__temp_PCAlpha, 0, 1);
+		ImGui::Text("Transform");
+		ImGui::DragFloat("X", &__temp_PCX, 0.1);
+		ImGui::DragFloat("Y", &__temp_PCY, 0.1);
+		ImGui::DragFloat("Z", &__temp_PCZ, 0.1);
+		ImGui::DragFloat("Th", &__temp_PCTh, 0.1);
+		ImGui::DragFloat("Scale Z", &__temp_PCSZ, 0.01);
+		ImGui::Text("");
+		ImGui::DragInt("Shader#", &shader_no, 1, 0, 1);
+		if (shader_no == 1) {
+			ImGui::DragFloat("Threshold", &shader_wall_based_pointcloud_visualizaer__Theta, 0.05, 0);
+		}
+		ImGui::TreePop();
 	}
-	ImGui::SameLine();
-	ImGui::Text("%s", __temp_pc_filename.c_str());
-	ImGui::Checkbox("Show Point Cloud", &__temp_showPC);
-	//ImGui::SliderFloat(
-	ImGui::SliderInt("Point Cloud Size", &__temp_PCSize, 1, 10);
-	ImGui::SliderFloat("Point Cloud Alpha", &__temp_PCAlpha, 0, 1);
+	if (ImGui::TreeNode("Texture")) {
+		if (ImGui::Button("Load Texture")) {
+			// load cubtex file
+			string fname = open_file_browser("", false, "texinfo");
+			if (!fname.empty()) {
+				__temp_cubtex_filename = get_filename(fname);
+				__temp_load_cubemap_texture(fname);
+				__temp_load_cubemap(0);
+				cub_texturing = true;
+				cub_nearest_cam = true;
+			}
+		}
+		ImGui::SameLine();
+		ImGui::Text("%s", __temp_cubtex_filename.c_str());
 
-	ImGui::Text("");
-	ImGui::Text("Texture");
-	if (ImGui::Button("Load Texture")) {
-		// load cubtex file
-		string fname = open_file_browser("", false, "texinfo");
-		if (!fname.empty()) {
-			__temp_cubtex_filename = get_filename(fname);
-			__temp_load_cubemap_texture(fname);
-			__temp_load_cubemap(0);
-			cub_texturing = true;
-			cub_nearest_cam = true;
+		ImGui::Checkbox("Show Texture", &cub_texturing);
+		ImGui::Checkbox("Auto Nearest Cubmap", &cub_nearest_cam);
+		if (ImGui::Button("  < Prev  ")) {
+			__temp_load_prev_cubemap();
 		}
-	}
-	ImGui::SameLine();
-	ImGui::Text("%s", __temp_cubtex_filename.c_str());
+		ImGui::SameLine();
+		if (ImGui::Button("  Next >  ")) {
+			__temp_load_next_cubemap();
+		}
 
-	ImGui::Checkbox("Show Texture", &cub_texturing);
-	ImGui::Checkbox("Auto Nearest Cubmap", &cub_nearest_cam);
-	if (ImGui::Button("  < Prev  ")) {
-		__temp_load_prev_cubemap();
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("  Next >  ")) {
-		__temp_load_next_cubemap();
-	}
-	
-	ImGui::Text("Position Adjustment");
-	if (cubtex_posedelta) {
-		if (sizeof(cubtex_posedelta->x) == 4) {
-			ImGui::SliderFloat("X", (float*)&cubtex_posedelta->x, -5.0, 5.0);
-			ImGui::SliderFloat("Y", (float*)&cubtex_posedelta->y, -10.0, 10.0);
-			ImGui::SliderFloat("Z", (float*)&cubtex_posedelta->z, -5.0, 5.0);
+		ImGui::Text("Position Adjustment");
+		if (cubtex_posedelta) {
+			if (sizeof(cubtex_posedelta->x) == 4) {
+				ImGui::SliderFloat("X", (float*)&cubtex_posedelta->x, -5.0, 5.0);
+				ImGui::SliderFloat("Y", (float*)&cubtex_posedelta->y, -10.0, 10.0);
+				ImGui::SliderFloat("Z", (float*)&cubtex_posedelta->z, -5.0, 5.0);
+			}
 		}
+		ImGui::TreePop();
 	}
 	ImGui::End();
 
@@ -634,12 +964,49 @@ void process_frame(int w, int h) {
 		cubtex.unbind();
 	}
 	if ( __temp_showPC && pc) {
+		glPushAttrib(GL_ENABLE_BIT);
+		glMatrixMode(GL_PROJECTION);
+		glPushMatrix();
+		glLoadIdentity();
+		glMatrixMode(GL_MODELVIEW);
+		glPushMatrix();
+		glLoadIdentity();
+
+		glPushAttrib(GL_DEPTH_BITS | GL_COLOR_BUFFER_BIT);
+		glEnable(GL_BLEND);
+		glDisable(GL_DEPTH_TEST);
+		glColor4f(0, 0, 0, 0.5);
+		glBegin(GL_QUADS);
+		glVertex3f(-1, -1, 0.5);
+		glVertex3f(1, -1, 0.5);
+		glVertex3f(1, 1, 0.5);
+		glVertex3f(-1, 1, 0.5);
+		glEnd();
+		glPopAttrib();
+
+		glMatrixMode(GL_PROJECTION);
+		glPopMatrix();
+		glMatrixMode(GL_MODELVIEW);
+		glPopMatrix();
+
+
 		glPointSize(__temp_PCSize);
 		glDepthMask(GL_FALSE);
 		glColor4f(1, 1, 1, __temp_PCAlpha);
+
+		bind_shader();
+
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glEnable(GL_BLEND);
+		glPushMatrix();
+		glTranslatef(__temp_PCX, __temp_PCY, __temp_PCZ);
+		glRotatef(__temp_PCTh, 0, 0, 1);
+		glScalef(1, 1, __temp_PCSZ);
 		pc->draw();
+
+		unbind_shader();
+
+		glPopMatrix();
 		glDisable(GL_BLEND);
 		glDepthMask(GL_TRUE);
 	}

@@ -100,6 +100,23 @@ struct MainViewer : public BasicViewSelector {
 	Controller *next;
 };
 
+
+struct PolygonLifter : public BasicViewSelector {
+	PolygonLifter(Controller *, Facet *f);
+	virtual void make_ui(void);
+	virtual void on_mouse_down(int x, int y, const Line3D& ray, int current_obj);
+	virtual void on_mouse_drag(int x, int y, const Line3D& ray, int current_obj);
+	virtual void on_mouse_up(int x, int y, const Line3D& ray, int current_obj);
+	virtual void post_draw(void);
+	virtual void draw_scene(void);
+
+	Facet *base_facet;
+	bool finalized;
+	bool canceled;
+	length_t height;
+	int last_x, last_y;
+};
+
 struct SolidMaker : public BasicViewSelector {
 	SolidMaker(Controller *, Facet *f);
 	virtual void make_ui(void);

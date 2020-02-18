@@ -221,6 +221,11 @@ void InFactoryQueryBuilder::query_cellspace(CellSpace* c) {
 	string id = cellspace_id.at(c);
 	string post_url = server_url + "/documents/" + doc_id + "/cellspace/" + id;
 
+	bool reversed = false;
+	if (c->cellspace_type == CellSpace::TYPE_CELLSPACE::TYPE_NONNAVIGABLE) {
+		reversed = true;
+	}
+
 	stringstream json_data;
 	json_data << "{";
 	json_data << KeyValue("id", id) << ',';
@@ -247,7 +252,11 @@ void InFactoryQueryBuilder::query_cellspace(CellSpace* c) {
 						coordinates << p.x << ' ' << p.y << ' ' << p.z;
 					}
 					do {
-						e = e->next();
+						//MODIFIED_2019_06_12
+						//e = e->next();
+						if (reversed) e = e->next();
+						else e = e->prev();
+
 						Point3D p = e->get_u()->to_point3();
 						coordinates << ", " << p.x << ' ' << p.y << ' ' << p.z;
 					} while (e != e_start);
@@ -262,7 +271,11 @@ void InFactoryQueryBuilder::query_cellspace(CellSpace* c) {
 							coordinates << p.x << ' ' << p.y << ' ' << p.z;
 						}
 						do {
-							e = e->next();
+							//MODIFIED_2019_06_12
+							//e = e->next();
+							if (reversed) e = e->next();
+							else e = e->prev();
+
 							Point3D p = e->get_u()->to_point3();
 							coordinates << ", " << p.x << ' ' << p.y << ' ' << p.z;
 						} while (e != e_start);
@@ -339,9 +352,13 @@ void InFactoryQueryBuilder::query_cellspace_boundary(CellSpaceBoundary* b) {
 			stringstream coordinates;
 			coordinates << "POLYGON ((";
 
-			for (int i = 0; i <= b->ring.size(); ++i) {
+			//MODIFIED_2019_06_12
+			//for (int i = 0; i <= b->ring.size(); ++i) {
+			for (int i = b->ring.size(); i >= 0; --i) {
 				Point3D p = b->ring[i%b->ring.size()]->to_point();
-				if (i > 0) coordinates << ", ";
+
+				//if (i > 0) coordinates << ", ";
+				if (i < b->ring.size()) coordinates << ", ";
 				coordinates << p.x << ' ' << p.y << ' ' << p.z;
 			}
 
@@ -657,6 +674,7 @@ void InFactoryQueryBuilder::query_transition(Transition* t) {
 				coordinates << "LINESTRING (";
 
 				coordinates << t->v->p.x << ' ' << t->v->p.y << ' ' << t->v->p.z << ", ";
+
 				if (t->midpoints.empty()) {
 					coordinates << (t->v->p.x + t->u->p.x) / 2 << ' ' << (t->v->p.y + t->u->p.y) / 2 << ' ' << (t->v->p.z + t->u->p.z) / 2 << ", ";
 				}
@@ -710,10 +728,9 @@ void InFactoryQueryBuilder::query_transition(Transition* t) {
 			stringstream geometry;			
 			geometry << KeyValue("type", "LineString") << ',';
 			{
-				// TODO
 				stringstream coordinates;
 				coordinates << "LINESTRING (";
-
+				
 				coordinates << t->u->p.x << ' ' << t->u->p.y << ' ' << t->u->p.z << ", ";
 				if (t->midpoints.empty()) {
 					coordinates << (t->v->p.x + t->u->p.x) / 2 << ' ' << (t->v->p.y + t->u->p.y) / 2 << ' ' << (t->v->p.z + t->u->p.z) / 2 << ", ";
@@ -726,7 +743,7 @@ void InFactoryQueryBuilder::query_transition(Transition* t) {
 					}
 				}
 				coordinates << t->v->p.x << ' ' << t->v->p.y << ' ' << t->v->p.z;
-
+				
 				coordinates << ")";
 				geometry << KeyValue("coordinates", coordinates.str()) << ',';
 			}
@@ -744,6 +761,7 @@ void InFactoryQueryBuilder::query_transition(Transition* t) {
 
 		{
 			stringstream properties;
+
 			string connects = "\"" + state_id.at(t->u) + "\",\"" + state_id.at(t->v) + "\"";
 			properties << KeyValue("connects", connects, '[', ']') << ',';
 			properties << KeyValue("name", id) << ',';

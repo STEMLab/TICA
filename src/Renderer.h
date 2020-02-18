@@ -48,6 +48,7 @@ struct RenderBuffer {
 	void read(void);
 	void readend(void);
 	void bind(void);
+	void bind_depthbuffer(void);
 	void unbind(void);
 };
 

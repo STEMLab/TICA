@@ -76,6 +76,7 @@ struct Vector3D {
 	Vector3D cross_product(const Vector3D& v) const;
 	Vector3D normalized(void) const;
 	length_t length(void) const;
+	length_t length_square(void) const;
 	Vector3D rotate(const Vector3D& q, radian_t theta) const;
 
 	Vector3D get_projection_component_to(const Vector3D&) const;

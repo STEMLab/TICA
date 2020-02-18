@@ -649,10 +649,10 @@ void StatePSFeaturePlacer::make_ui(void) {
 	ImGui::SliderFloat("Height", &this->height, 0, 1);
 
 	ImGui::Text("");
-	if (ImGui::Button("OK")) {
+	if (ImGui::Button("OK", ImVec2(250, 0))) {
 		finalized = true;
 	}
-	if (ImGui::Button("Cancel")) {
+	if (ImGui::Button("Cancel", ImVec2(250, 0))) {
 		canceled = true;
 	}
 	ImGui::End();
@@ -786,7 +786,7 @@ void StateLocationEditor::on_mouse_down(int x, int y, const Line3D& ray, int cur
 
 void StateLocationEditor::make_ui(void) {
 	ImGui::Begin("State/Transition Geometry Editor");
-	if (ImGui::Button("OK")) {
+	if (ImGui::Button("OK", ImVec2(250, 0))) {
 		finalized = true;
 	}
 	ImGui::End();
@@ -923,8 +923,8 @@ void StateInterlayerConnectionEstablisher::on_mouse_down(int x, int y, const Lin
 }
 void StateInterlayerConnectionEstablisher::make_ui(void) {
 	ImGui::Begin("Interlayer Connection Establisher");
-	if (ImGui::Button("OK")) { finalized = true; }
-	if (ImGui::Button("Cancel")) { canceled = true; }
+	if (ImGui::Button("OK", ImVec2(250, 0))) { finalized = true; }
+	if (ImGui::Button("Cancel", ImVec2(250, 0))) { canceled = true; }
 	ImGui::End();
 }
 

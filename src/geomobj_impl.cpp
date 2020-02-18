@@ -38,12 +38,121 @@ void DrawSetting::setColorf(float r, float g, float b, float alpha) {
 	glColor4f(r, g, b, alpha);
 }
 
+SubspaceFilter::SubspaceFilter(void)
+: dof(3) {
+}
+SubspaceFilter::SubspaceFilter(const Plane& p)
+	: dof(2), plane(p) {
+}
+SubspaceFilter::SubspaceFilter(const Line3D& l)
+	: dof(1), line(l) {
+}
+bool SubspaceFilter::projection(const Point3D& p, Point3D* _ret, const Vector3D& projectionVector) const {
+	scalar_t alpha;
+	scalar_t beta;
+	Point3D ret = p;
+
+	switch (dof) {
+	case 0:
+		if (!projectionVector.is_zero()) {
+			if (!interp(point, Line3D(p, projectionVector), &alpha)) {
+				return false;
+			}
+			if (!(point-(p+alpha*projectionVector)).is_zero()) return false;
+		}
+		else {
+			ret = point;
+		}
+		break;
+	case 1:
+		if (projectionVector.is_zero()) {
+			if (!interp(p, line, &alpha)) {
+				return false;
+			}
+			ret = line.p + alpha*line.v;
+		}
+		else {
+			if (!interp(Line3D(p, projectionVector), line, &alpha, &beta)) {
+				return false;
+			}
+			ret = line.p + beta*line.v;
+		}
+		break;
+	case 2:
+		if (projectionVector.is_zero()) {
+			if (!interp(p, plane, &alpha)) {
+				return false;
+			}
+			ret = p - alpha * plane.h;
+		}
+		else {
+			if (!interp(Line3D(p, projectionVector), plane, &alpha)) {
+				return false;
+			}
+			ret = p + alpha * projectionVector;
+		}
+	case 3:
+		break;
+	default:
+		return false;
+	}
+	if (_ret) *_ret = ret;
+	return true;
+}
+
+bool SubspaceFilter::add_plane(const Plane& p, bool invalidate) {
+	if (invalidate) {
+		bool r = add_plane(p, false);
+		if (!r) {
+			dof = -1;
+		}
+		return r;
+	}
+	scalar_t alpha;
+	scalar_t beta;
+
+	switch (dof) {
+	case 0:
+		if (!interp(point, p, &alpha)) {
+			return false;
+		}
+		if (alpha * p.h.length() < EPSILON) return true;
+		return false;
+	case 1:
+		if (!interp(line, p, &alpha)) {
+			// parallel
+			if (!interp(line.p, p, &alpha)) return false;
+			if (abs(alpha*p.h.length()) < EPSILON) return true; // line is on the plane 
+			return false;
+		}
+		point = line.p + alpha * line.v;
+		dof = 0;
+		return true;
+	case 2:
+		if (!interp(plane, p, &line, 0, 0)) {
+			// parallel
+			if (!interp(p.p, plane, &alpha)) return false;
+			if (abs(alpha * plane.h.length()) < EPSILON) return true;
+			return false;
+		}
+		if (line.v.is_zero()) return false;
+		line.v = line.v.normalized();
+		dof = 1;
+		return true;
+	case 3:
+		plane = p;
+		dof = 2;
+		return true;
+	default:
+		return false;
+	}
+}
+
 Vertex::Vertex(coord_t _x, coord_t _y, coord_t _z)
-	:x(_x),y(_y),z(_z)
+	:x(_x), y(_y), z(_z)
 {
 	;
 }
-
 bool Vertex::move_to(const Point3D& p) {
 	x = p.x;
 	y = p.y;
@@ -77,7 +186,7 @@ bool Vertex::get_feasible_point_nearest_to_point(const Point3D& p, Point3D* ret,
 	case 2:
 		if (!interp(associated_facetvertex[0]->get_facet()->get_plane(), associated_facetvertex[1]->get_facet()->get_plane(), &l, 0, 0)) return false;
 		if (!interp(p, l, &alpha)) return false;
-		cout << alpha << ',' << p.x << ',' << p.y << ',' << p.z << "THROW " << l.p.x << ',' << l.p.y << ',' << l.p.z << " V" << l.v.x << ',' << l.v.y << ',' << l.v.z << endl;
+		//cout << alpha << ',' << p.x << ',' << p.y << ',' << p.z << "THROW " << l.p.x << ',' << l.p.y << ',' << l.p.z << " V" << l.v.x << ',' << l.v.y << ',' << l.v.z << endl;
 		q = l.p + alpha * l.v;
 		if (ret) *ret = q;
 		return true;
@@ -244,7 +353,7 @@ bool Vertex::absorb(Vertex* v) {
 	//if (associated_facetvertex.size() + v->associated_facetvertex.size() > 3) return false;
 
 	for (int i = 0; i < v->associated_facetvertex.size(); ++i) {
-		cout << "ADD" << endl;
+		//cout << "ADD" << endl;
 		associated_facetvertex.push_back(v->associated_facetvertex[i]);
 		v->associated_facetvertex[i]->associated_vertex = this;
 	}
@@ -441,6 +550,32 @@ void Facet::draw_vertex(DrawSetting* drawsetting) {
 			glEnd();
 		}
 	}
+}
+
+int Facet::winding_number(const Point3D& p) const {
+	if (edge.empty()) return 0;
+	Point3D p_proj = plane.project(p);
+	Point3D u = edge[0]->u->to_point3();
+	Point3D v = edge[0]->v->to_point3();
+	Point3D c = u + 0.5*(v - u);
+
+	Line3D ray(p_proj, c - p_proj);
+	if (ray.v.is_zero()) return 1;
+
+	int w = 0;
+	for (int i = 0; i < edge.size(); ++i) {
+		Line3D e(edge[i]->u->to_point3(), edge[i]->to_vector3());
+		float alpha, beta;
+		if (interp(ray, e, &alpha, &beta)) {
+			if (alpha < 0) continue;
+			if (beta < 0 || beta > 1) continue;
+
+			float h = ray.v.cross_product(e.v).dot_product(plane.h);
+			if (h < 0) --w;
+			else if (h > 0) ++w;
+		}
+	}
+	return w;
 }
 
 static __temp_texture *__current_coord = 0;
@@ -694,7 +829,7 @@ void Facet::make_solid(const Vector3D& h, std::vector<Vertex*>* rv, std::vector<
 				Vertex *u = new_vs.at(e->u);
 
 				FacetVertex *v1 = f_ceiling->create_vertex(u);
-				cout << v1 << endl;
+				//cout << v1 << endl;
 				if (lv) {
 					f_ceiling->create_edge(lv, v1);
 				}
@@ -704,7 +839,7 @@ void Facet::make_solid(const Vector3D& h, std::vector<Vertex*>* rv, std::vector<
 			} while (e != exterior);
 			if (lv) {
 				f_ceiling->exterior = f_ceiling->create_edge(lv, f_ceiling->get_vertex(new_vs.at(e->u)));
-				cout << f_ceiling->exterior << endl;
+				//cout << f_ceiling->exterior << endl;
 			}
 
 		}
@@ -1122,6 +1257,9 @@ bool Facet::split_edge(FacetEdge* e, Vertex *v3) {
 	return true;
 }
 
+void Facet::set_plane(const Plane& p) {
+	plane = p;
+}
 
 Plane Facet::get_plane(void) const {
 	return plane;
@@ -1132,7 +1270,7 @@ bool Facet::planarize(void) {
 	set<Facet*> adj_facets;
 	for (int i = 0; i < vertex.size(); ++i) {
 		Vertex *v = vertex[i]->associated_vertex;
-		cout << v->associated_facetvertex.size() << endl;
+		//cout << v->associated_facetvertex.size() << endl;
 		if (v->associated_facetvertex.size() == 1) {
 			scalar_t alpha;
 			Point3D p = v->to_point();

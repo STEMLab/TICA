@@ -8,6 +8,7 @@ unsigned int compose_integer(unsigned char *b);
 
 std::string open_file_browser(const std::string & path, bool save, const std::string& ext);
 std::string get_executable_path(void);
+void message_box(const std::string&);
 
 class Image {
 public:
