@@ -46,8 +46,8 @@ void Camera::applyProjectionMatrix(void) const {
 }
 
 void Camera::applyViewMatrix(void) const {
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
+	//glMatrixMode(GL_MODELVIEW);
+	//glLoadIdentity();
 	glRotatef((GLfloat)(-pitch / PI * 180), 0, 1, 0);
 	glRotatef((GLfloat)(-yaw / PI * 180), 0, 0, 1);
 	glTranslatef(-center.x, -center.y, -center.z);

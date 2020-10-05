@@ -153,6 +153,11 @@ Vertex::Vertex(coord_t _x, coord_t _y, coord_t _z)
 {
 	;
 }
+Vertex::Vertex(const Point3D& p)
+	: x(p.x), y(p.y), z(p.z)
+{
+	;
+}
 bool Vertex::move_to(const Point3D& p) {
 	x = p.x;
 	y = p.y;
@@ -483,6 +488,22 @@ bool FacetEdge::is_shared(void) const {
 FacetVertex *FacetEdge::get_u() { return u; }
 FacetVertex *FacetEdge::get_v() { return v; }
 Facet *FacetEdge::get_f() { return facet; }
+Facet* FacetEdge::get_opposite_facet() {
+	Vertex* x = u->get_vertex();
+	Vertex* y = v->get_vertex();
+	int n = x->num_shared_facets();
+	for (int i = 0; i < n; ++i) {
+		Facet* f = x->get_facet(i);
+		if (f == facet) continue;
+		for (int j = 0; j < f->num_edges(); ++j) {
+			FacetEdge* e = f->get_edge(j);
+			if (e->u->get_vertex() == y && e->v->get_vertex() == x) {
+				return f;
+			}
+		}
+	}
+	return 0;
+}
 
 Facet::Facet()
 	: gl_polygon_id(-1)
@@ -576,6 +597,31 @@ int Facet::winding_number(const Point3D& p) const {
 		}
 	}
 	return w;
+}
+
+scalar_t Facet::area(void) const {
+	scalar_t a_sum = 0;
+	{
+		FacetEdge* e_begin = get_exteior_edge();
+		FacetEdge* e = e_begin;
+		do {
+			Vector3D p = e->get_u()->to_point3().to_vector();
+			Vector3D q = e->get_v()->to_point3().to_vector();
+			a_sum += p.cross_product(q).length() / 2;
+			e = e->next();
+		} while (e != e_begin);
+	}
+	for( int i = 0; i < num_holes(); ++i ) {
+		FacetEdge* e_begin = get_hole_edge(i);
+		FacetEdge* e = e_begin;
+		do {
+			Vector3D p = e->get_u()->to_point3().to_vector();
+			Vector3D q = e->get_v()->to_point3().to_vector();
+			a_sum -= p.cross_product(q).length() / 2;
+			e = e->next();
+		} while (e != e_begin);
+	}
+	return a_sum;
 }
 
 static __temp_texture *__current_coord = 0;
@@ -963,6 +1009,45 @@ bool Facet::split_by_edge(FacetVertex *u, FacetVertex *v, std::vector<Facet*>* r
 	new_f->exterior = new_f->create_edge(new_u, new_v);
 	new_f->triangulate();
 	if (rf) rf->push_back(new_f);
+	return true;
+}
+
+bool Facet::make_splitting_vertex_by_line(const Line3D& l, std::vector<pair<FacetEdge*,Point3D> >* evs) {
+//	if (u->facet != this || v->facet != this) return false;
+//	if (u->next() == v || v->next() == u) return false;
+	if (!holes.empty()) return false; // cannot handle holes yet.
+
+	vector<FacetVertex*> va;
+	vector<FacetVertex*> vb;
+	partition_vertex(l, va, vb);
+
+	if (va.empty() || vb.empty()) return false;
+
+	set<FacetVertex*> sa(va.begin(), va.end());
+	set<FacetVertex*> sb(vb.begin(), vb.end());
+	vector<FacetEdge*> split_edges;
+	for (int i = 0; i < va.size(); ++i) {
+		FacetVertex* v_prev = va[i]->incoming_edge()->get_u();
+		FacetVertex* v_next = va[i]->outgoing_edge()->get_v();
+		if (sb.find(v_prev) != sb.end()) {
+			split_edges.push_back(va[i]->incoming_edge());
+		}
+		if (sb.find(v_next) != sb.end()) {
+			split_edges.push_back(va[i]->outgoing_edge());
+		}
+	}
+
+	Line3D l_proj = plane.project(l);
+	std::vector<pair<FacetEdge*, Point3D> > ret;
+	for (int i = 0; i < split_edges.size(); ++i) {
+		Line3D l_uv(split_edges[i]->get_u()->to_point3(), split_edges[i]->get_v()->to_point3());
+		scalar_t a, b;
+		if (interp(l_proj, l_uv, &a, &b)) {
+			Point3D new_p = l_proj.p + a * l_proj.v;
+			ret.push_back(make_pair(split_edges[i], new_p));
+		}
+	}
+	if (evs) *evs = ret;
 	return true;
 }
 
@@ -1359,6 +1444,30 @@ void Facet::detatch_a_vertex(FacetVertex *v) {
 			v->associated_vertex->associated_facetvertex.erase(v->associated_vertex->associated_facetvertex.begin() + i);
 			v->associated_vertex = 0;
 			break;
+		}
+	}
+}
+
+void Facet::partition_vertex(const Line3D& l, vector<FacetVertex*>& a, vector<FacetVertex*>& b){
+	a.clear();
+	b.clear();
+
+	Point3D proj_p = plane.project(l.p);
+	Point3D proj_q = plane.project(l.p + l.v);
+	Vector3D proj_v = proj_q - proj_p;
+	if (proj_v.is_zero()) return;
+	proj_v = proj_v.normalized();
+	Line3D projected_line(proj_p, proj_v);
+
+	Vector3D h = plane.h.normalized().cross_product(proj_v);
+
+	for (int i = 0; i < vertex.size(); ++i) {
+		scalar_t hvalue = (plane.project(vertex[i]->to_point3()) - proj_p).dot_product(h);
+		if (hvalue > 0) {
+			a.push_back(vertex[i]);
+		}
+		else {
+			b.push_back(vertex[i]);
 		}
 	}
 }

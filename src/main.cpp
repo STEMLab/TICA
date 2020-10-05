@@ -11,16 +11,24 @@
 #include "ControllerImpl.h"
 #include "ControllerImpl_StateEditor.h"
 #include "ControllerImpl_ConnectionEditor.h"
+#include "ObjModel.h"
 
 
 using namespace std;
-extern map<Facet*, string> __temp_facet_tag;
 
 static Camera cam;
 static double last_t = 0.0;
 static radian_t base_yaw = 0.0;
 static radian_t base_pitch = 0.0;
 static RenderBuffer render_buffer;
+
+
+static bool use_z_filter = false;
+static Shader z_filter;
+static float z_filter_zmin = 0.0;
+static float z_filter_zheight = 10.0;
+void bind_z_filter_shader();
+void unbind_z_filter_shader();
 
 Point3D get_camera_pos(void) {
 	return cam.center;
@@ -42,14 +50,16 @@ unsigned int select_object(int w, int h, float x, float y) {
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	cam.applyProjectionMatrix();
+	cam.applyViewMatrix();
 
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	cam.applyViewMatrix();
 
 	glEnable(GL_DEPTH_TEST);
 
+	bind_z_filter_shader();
 	Controller::current_controller->draw_select_scene();
+	unbind_z_filter_shader();
 
 	render_buffer.writeend();
 
@@ -135,16 +145,19 @@ static void draw(int w, int h) {
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	glEnable(GL_CULL_FACE);
-	glCullFace(GL_BACK);
+	if (!use_z_filter) {
+		glEnable(GL_CULL_FACE);
+		glCullFace(GL_BACK);
+	}
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	cam.applyProjectionMatrix();
-	
+	cam.applyViewMatrix();
+
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	cam.applyViewMatrix();
+	
 
 	glEnable(GL_DEPTH_TEST);
 
@@ -186,6 +199,9 @@ static Shader shader_wall_based_pointcloud_visualizaer;
 static float shader_wall_based_pointcloud_visualizaer__Theta = 0.2;
 static int shader_no = 0;
 
+static ObjModel* OverlayObj;
+static bool __show_overlay_obj = false;
+
 static void init_shader(void) {
 	shader_wall_based_pointcloud_visualizaer.create(0,
 		"#version 120\n"
@@ -204,8 +220,48 @@ static void init_shader(void) {
 		"float d=0.5+(depth_ptr-depth_plane)/(2*FilterParam.x);"
 		"gl_FragColor=vec4(d,1-d,0,FilterParam.y);"
 		"}");
+
+	z_filter.create(
+		"#version 120\n"
+		"varying vec3 orgcoord;\n"
+		"varying vec4 color;\n"
+		"void main() { "
+		"color=gl_Color;"
+		"orgcoord = (gl_ModelViewMatrix*gl_Vertex).xyz;"
+		"gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex; }",
+
+		"#version 120\n"
+		"varying vec3 orgcoord;\n"
+		"varying vec4 color;\n"
+		"uniform float zmin;\n"
+		"uniform float zmax;\n"
+		"void main() {"
+		"if(orgcoord.z<zmin) discard;"
+		"if(orgcoord.z>zmax) discard;"
+		"if(orgcoord.z<zmin+0.1) { gl_FragColor=vec4(0,0,0,0); }"
+		"else if(orgcoord.z>zmax-0.1) { gl_FragColor=vec4(0,0,0,0); }"
+		"else {"
+		"	if(!gl_FrontFacing) discard;"
+		"	else gl_FragColor = color; "
+		"}}"
+	);
 }
 
+
+static void bind_z_filter_shader(void) {
+	if (use_z_filter) {
+		z_filter.use();
+		glDisable(GL_CULL_FACE);
+		int zmin = glGetUniformLocation(z_filter.program, "zmin");
+		glUniform1f(zmin, z_filter_zmin);
+		int zmax = glGetUniformLocation(z_filter.program, "zmax");
+		glUniform1f(zmax, z_filter_zmin+ z_filter_zheight);
+	}
+}
+static void unbind_z_filter_shader(void) {
+	glEnable(GL_CULL_FACE);
+	glUseProgram(0);
+}
 static void bind_shader(void) {
 	if (!pc) return;
 	if (!__temp_showPC) return;
@@ -772,7 +828,6 @@ void __temp_export_to_inFactory_query(void) {
 	}
 }
 
-
 void make_ui(void) {
 	ImGui::Begin("Info");
 	ImGui::Text("Camera Pos: %.3f %.3f %.3f", (float)cam.center.x, (float)cam.center.y, (float)cam.center.z); 
@@ -797,7 +852,6 @@ void make_ui(void) {
 					__temp_save_geometry(fname);
 				}
 			}
-			ImGui::Text("");
 			/*if (ImGui::Button("Load PCD File List for Obstacles (Loaded as MBBs)")) {
 				string fname = open_file_browser("", false, "txt");
 				if (!fname.empty()) {
@@ -868,7 +922,13 @@ void make_ui(void) {
 	}
 	ImGui::End();
 
-	ImGui::Begin("PointCloud & Texture");
+	ImGui::Begin("Overlay & Filter");
+	if (ImGui::TreeNode("Z-Filter")) {
+		ImGui::Checkbox("Use Z Filter", &use_z_filter);
+		ImGui::DragFloat("Base", &z_filter_zmin, 0.1);
+		ImGui::DragFloat("Height", &z_filter_zheight, 0.1, 0.1);
+		ImGui::TreePop();
+	}
 	if (ImGui::TreeNode("Point Cloud")) {
 		if (ImGui::Button("PCD File")) {
 			// load pcd file
@@ -913,7 +973,7 @@ void make_ui(void) {
 		ImGui::Text("%s", __temp_cubtex_filename.c_str());
 
 		ImGui::Checkbox("Show Texture", &cub_texturing);
-		ImGui::Checkbox("Auto Nearest Cubmap", &cub_nearest_cam);
+		ImGui::Checkbox("Auto Nearest Cubemap", &cub_nearest_cam);
 		if (ImGui::Button("  < Prev  ")) {
 			__temp_load_prev_cubemap();
 		}
@@ -930,6 +990,28 @@ void make_ui(void) {
 				ImGui::SliderFloat("Z", (float*)&cubtex_posedelta->z, -5.0, 5.0);
 			}
 		}
+		ImGui::TreePop();
+	}
+
+	if (ImGui::TreeNode(".Obj Model")) {
+		if (ImGui::Button("Load Obj Model")) {
+			string fname = open_file_browser("", false, "obj");
+			if (!fname.empty()) {
+				if (OverlayObj) {
+					OverlayObj->release();
+					delete OverlayObj;
+				}
+				OverlayObj = new ObjModel();
+				ifstream in(fname);
+				OverlayObj->parse(in);
+				OverlayObj->init();
+				__show_overlay_obj = true;
+			}
+		}
+		ImGui::SameLine();
+
+		ImGui::Checkbox("Show Obj Model", &__show_overlay_obj);
+		
 		ImGui::TreePop();
 	}
 	ImGui::End();
@@ -959,7 +1041,11 @@ void process_frame(int w, int h) {
 		if (cubtex_posedelta) { cubtex.bind(cubtex_posedelta->x, cubtex_posedelta->y, cubtex_posedelta->z); }
 		else { cubtex.bind(); }
 	}
+	
+	bind_z_filter_shader();
 	draw(w, h);
+	unbind_z_filter_shader();
+
 	if (cub_texturing) {
 		cubtex.unbind();
 	}
@@ -1008,6 +1094,20 @@ void process_frame(int w, int h) {
 
 		glPopMatrix();
 		glDisable(GL_BLEND);
+		glDepthMask(GL_TRUE);
+	}
+
+	if (__show_overlay_obj && OverlayObj) {
+
+		glDepthMask(GL_FALSE);
+
+		glEnable(GL_BLEND);
+		glBlendColor(0, 0, 0, 0.5);
+		glBlendFunc(GL_CONSTANT_ALPHA,GL_ONE_MINUS_CONSTANT_ALPHA);
+		OverlayObj->draw(false);
+		glDisable(GL_BLEND);
+
+		OverlayObj->draw(true);
 		glDepthMask(GL_TRUE);
 	}
 	/*

@@ -45,6 +45,7 @@ class Vertex {
 public:
 	friend class Facet;
 	Vertex(coord_t _x = 0, coord_t _y = 0, coord_t _z = 0);
+	Vertex(const Point3D&);
 	void draw(length_t r = 0, DrawSetting* d = 0) ;
 
 	bool join(Vertex *v);
@@ -110,6 +111,7 @@ public:
 	FacetVertex *get_u();
 	FacetVertex *get_v();
 	Facet* get_f();
+	Facet* get_opposite_facet();
 
 	bool is_shared(void) const;
 
@@ -140,6 +142,7 @@ public:
 	void draw_edge(DrawSetting* d = 0) ;
 	void draw_vertex(DrawSetting* d = 0) ;
 	int winding_number(const Point3D& p) const;
+	scalar_t area(void) const;
 
 	static Facet* create_facet(Vertex* v1, Vertex* v2, Vertex* v3);
 	static Facet* create_facet(Vertex* v1, Vertex* v2, Vertex* v3, Vertex* v4); 
@@ -170,6 +173,7 @@ public:
 	static Facet* merge(Facet* fa, Facet* fb, std::vector<Vertex*>* rv, std::vector<Facet*>*);
 	void make_solid(const Vector3D&, std::vector<Vertex*>*, std::vector<Facet*>*);
 	bool split_by_edge(FacetVertex *u, FacetVertex *v, std::vector<Facet*>*);
+	bool make_splitting_vertex_by_line(const Line3D& l, std::vector<std::pair<FacetEdge*, Point3D> >* evs);
 	void reverse(void);
 
 	//bool remove_vertex(int i);
@@ -202,6 +206,7 @@ private:
 
 	// additional unit-task for editing
 	void detatch_a_vertex(FacetVertex *v);
+	void partition_vertex(const Line3D& l, std::vector<FacetVertex*>& a, std::vector<FacetVertex*>& b);
 
 
 public:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include <vector>
 
 struct Point2D;
 struct Point2D;
@@ -52,15 +53,6 @@ struct Vector2D {
 	friend Vector2D operator * (scalar_t a, const Vector2D& v);
 };
 
-struct AxisAlignedBoundingBox3D {
-	AxisAlignedBoundingBox3D(void);
-	AxisAlignedBoundingBox3D(const Point3D& _m, const Point3D& _M);
-	Point3D min;
-	Point3D max;
-
-	void add(const Point3D&);
-	AxisAlignedBoundingBox3D operator + (const AxisAlignedBoundingBox3D&) const;
-};
 
 struct Vector3D {
 	Vector3D(void);
@@ -91,6 +83,29 @@ struct Vector3D {
 	bool is_zero(void) const;
 };
 
+
+struct AxisAlignedBoundingBox3D {
+	AxisAlignedBoundingBox3D(void);
+	AxisAlignedBoundingBox3D(const Point3D& _m, const Point3D& _M);
+	Point3D min;
+	Point3D max;
+
+	void add(const Point3D&);
+	AxisAlignedBoundingBox3D operator + (const AxisAlignedBoundingBox3D&) const;
+};
+
+struct XYRotatedBoundingBox3D {
+	XYRotatedBoundingBox3D(void);
+
+	Point3D min;
+	Vector3D axis_u;
+	Vector3D axis_v;
+	Vector2D xy;
+	length_t height;
+
+	void compute(const std::vector<Point3D>&);
+};
+
 struct Line2D {
 	Line2D(const Point2D& _p, const Vector2D& _v);
 	Point2D p;
@@ -101,6 +116,7 @@ struct Line2D {
 
 struct Line3D {
 	Line3D();
+	Line3D(const Point3D&, const Point3D&);
 	Line3D(const Point3D&, const Vector3D&);
 
 	Point3D p;
@@ -114,6 +130,7 @@ struct Plane {
 	Vector3D h;
 
 	Point3D project(const Point3D& q, length_t *d = 0) const;
+	Line3D project(const Line3D& l) const;
 
 	bool is_parallel(const Plane& plane) const;
 	Line3D intersect(const Plane&) const;
@@ -157,3 +174,5 @@ bool interp(const Line3D& l1, const Line3D& l2, scalar_t *_alpha, scalar_t *_bet
 bool interp(const Point3D& x, const Plane& p, scalar_t *_alpha);
 bool interp(const Line3D& l, const Plane& p, scalar_t *_alpha);
 bool interp(const Plane& p, const Plane& q, Line3D *_line, Point3D *p_proj, Point3D *q_proj);
+
+float solid_angle(const Point3D& o, const Point3D& p, const Point3D& q, const Point3D& r);

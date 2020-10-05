@@ -48,6 +48,74 @@ AxisAlignedBoundingBox3D AxisAlignedBoundingBox3D::operator + (const AxisAligned
 	ret.add(min);
 	return ret;
 }
+
+XYRotatedBoundingBox3D::XYRotatedBoundingBox3D(void)
+:min(0,0,0), axis_u(1,0,0), axis_v(0,1,0), xy(0,0), height(0.0) { ; }
+
+void XYRotatedBoundingBox3D::compute(const std::vector<Point3D>& pts){
+	if (pts.empty()) {
+		*this = XYRotatedBoundingBox3D();
+		return;
+	}
+	min.z = pts[0].z;
+	height = 0.0;
+	for (int i = 1; i < pts.size(); ++i) {
+		if (min.z > pts[i].z) {
+			height += min.z - pts[i].z;
+			min.z = pts[i].z;
+		}
+		if (height < pts[i].z - min.z) {
+			height = pts[i].z - min.z;
+		}
+	}
+
+	// TODO: may use the convex hull to improve the complexity
+	scalar_t min_area = -1;
+	Point3D  ma_p(0, 0, 0);
+	Vector2D ma_xy(0, 0);
+	Vector3D ma_u(1, 0, 0);
+	Vector3D ma_v(0, 1, 0);
+	for (int i = 0; i < pts.size(); ++i) {
+		for (int j = i + 1; j < pts.size(); ++j) {
+			//Vector2D delta(pts[j].x - pts[i].x, pts[j].y - pts[i].y);
+			Vector3D u = pts[j] - pts[i];
+			u.z = 0;
+			if (u.is_zero()) continue;
+			u = u.normalized();
+			Vector3D v = Vector3D(0, 0, 1).cross_product(u);
+
+			scalar_t min_u, max_u;
+			scalar_t min_v, max_v;
+			min_u = max_u = pts[0].to_vector().dot_product(u);
+			min_v = max_v = pts[0].to_vector().dot_product(v);
+
+			for (int k = 1; k < pts.size(); ++k) {
+				scalar_t x = pts[k].to_vector().dot_product(u);
+				scalar_t y = pts[k].to_vector().dot_product(v);
+
+				if (min_u > x) min_u = x;
+				if (min_v > y) min_v = y;
+
+				if (max_u < x) max_u = x;
+				if (max_v < y) max_v = y;
+			}
+
+			scalar_t area = (max_u - min_u) * (max_v - min_v);
+			if (min_area < 0 || min_area > area) {
+				min_area = area;
+				min = Point3D(0,0,min.z) + (u * min_u + v * min_v);
+				xy = Vector2D(max_u - min_u, max_v - min_v);
+				axis_u = u;
+				axis_v = v;
+			}
+		}
+	}
+	// Post condition:
+	//  "min" is the bottom-left corner, "axis_u" and "axis_v" comprise the unit vectors indicating two sides of the bounding box.
+	//  "xy" is (width, height).
+	
+};
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 Vector2D::Vector2D(void) { ; }
 Vector2D::Vector2D(coord_t _x, coord_t _y) : x(_x), y(_y) { ; }
@@ -148,6 +216,7 @@ Point2D Line2D::get_projection_of(const Point2D& _p, length_t *_alpha) const {
 
 
 Line3D::Line3D() { ; }
+Line3D::Line3D(const Point3D& _p, const Point3D& _q) : p(_p), v(_q-_p) { ; }
 Line3D::Line3D(const Point3D& _p, const Vector3D& _v) : p(_p), v(_v) { ; }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -157,6 +226,12 @@ Point3D Plane::project(const Point3D& q, length_t *d) const {
 	length_t l = (p - q).dot_product(h) / h.length();
 	if (d) *d = l;
 	return q + l * h.normalized();
+}
+Line3D Plane::project(const Line3D& l) const {
+	Point3D proj_p = project(l.p);
+	Point3D proj_q = project(l.p + l.v);
+	Vector3D proj_v = proj_q - proj_p;
+	return Line3D(proj_p, proj_v);
 }
 
 CoordinatedPlane::CoordinatedPlane(void) { ; }
@@ -290,4 +365,31 @@ bool interp(const Plane& p, const Plane& q, Line3D *_line, Point3D *p_proj, Poin
 		*_line = Line3D(p_p, uv.normalized());
 	}
 	return true;
+}
+
+#include <iostream>
+float solid_angle(const Point3D& o, const Point3D& p, const Point3D& q, const Point3D& r) {
+	Vector3D a = (p - o).normalized();
+	Vector3D b = (q - o).normalized();
+	Vector3D c = (r - o).normalized();
+
+	//std::cout << "VEC " << a.x << ' ' << a.y << ' ' << a.z << std::endl;
+	//std::cout << "VEC " << b.x << ' ' << b.y << ' ' << b.z << std::endl;
+	//std::cout << "VEC " << c.x << ' ' << c.y << ' ' << c.z << std::endl;
+
+	scalar_t abc = a.dot_product(b.cross_product(c));
+	scalar_t div = 1 + a.dot_product(b) + a.dot_product(c) + b.dot_product(c);
+
+	scalar_t omega = atan(abc/div);
+
+	//std::cout << "NORM " << omega << '\t' << abc << '\t' << div << '\t';
+
+	if (div < 0) {
+		if (omega < 0) omega += PI;
+		else omega -= PI;
+	}
+
+	//std::cout << omega << std::endl;
+	//if ((a + b + c).dot_product((b - a).cross_product(c - a)) < 0) omega = -omega;
+	return 2*omega;
 }

@@ -95,7 +95,12 @@ struct MainViewer : public BasicViewSelector {
 	std::set<FacetEdge*> selected_edge;
 	std::set<Facet*> selected_facet;
 
+	bool show_inspection_result;
+	std::vector<Facet*> inspection_facets;
+	std::vector<Vertex*> inspection_vertex;
+
 	void clear_selection(void);
+	void inspect_geometry(void);
 	
 	Controller *next;
 };
@@ -117,8 +122,25 @@ struct PolygonLifter : public BasicViewSelector {
 	int last_x, last_y;
 };
 
+struct MultiPolygonLifter : public BasicViewSelector {
+	MultiPolygonLifter(Controller*, const std::vector<Facet*>& f);
+	virtual void make_ui(void);
+	virtual void on_mouse_down(int x, int y, const Line3D& ray, int current_obj);
+	virtual void on_mouse_drag(int x, int y, const Line3D& ray, int current_obj);
+	virtual void on_mouse_up(int x, int y, const Line3D& ray, int current_obj);
+	virtual void post_draw(void);
+	virtual void draw_scene(void);
+
+	std::vector<Facet*> base_facet;
+	Vector3D h;
+	bool finalized;
+	bool canceled;
+	length_t height;
+	int last_x, last_y;
+};
+
 struct SolidMaker : public BasicViewSelector {
-	SolidMaker(Controller *, Facet *f);
+	SolidMaker(Controller *, Facet *f, length_t h = 3.0);
 	virtual void make_ui(void);
 	virtual void on_mouse_down(int x, int y, const Line3D& ray, int current_obj);
 	virtual void on_mouse_drag(int x, int y, const Line3D& ray, int current_obj);
