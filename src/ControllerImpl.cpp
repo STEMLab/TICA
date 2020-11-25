@@ -319,6 +319,9 @@ void MainViewer::inspect_geometry(void) {
 					break;
 				}
 			}
+			
+			if (!facets[i]->is_good()) { failed = true; }
+
 			if (failed) {
 				inspection_facets.push_back(facets[i]);
 			}

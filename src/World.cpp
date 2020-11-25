@@ -53,6 +53,14 @@ bool CellSpace::is_room(void) const { return cellspace_type == TYPE_CELLSPACE::T
 bool CellSpace::is_door(void) const { return cellspace_type == TYPE_CELLSPACE::TYPE_DOOR || cellspace_type == TYPE_CELLSPACE::TYPE_EXTERIORDOOR; }
 bool CellSpace::is_corridor(void) const { return cellspace_type == TYPE_CELLSPACE::TYPE_CORRIDOR; }
 
+Point3D CellSpaceBoundary::get_centroid(void) const {
+	Vector3D v_centroid(0, 0, 0);
+	for (auto i = ring.begin(); i != ring.end(); ++i) {
+		v_centroid = v_centroid + (*i)->to_vector();
+	}
+	return (v_centroid / ring.size()).to_point();
+}
+
 
 static void dfs_get_connected_facets(Facet* f, set<Facet*>& unvisited, vector<Facet*>& fs) {
 	fs.push_back(f);
@@ -172,34 +180,52 @@ void World::make_cellspaces(void) {
 
 		// 이 시점에서 boundary_to_base_facet와 boundary_to_opposite_facet는 서로 반대편을 바라보고 있다.
 
-		CellSpace *c = new CellSpace();
-		if (connections[i].fbase_opposite) {
-			c->cellspace_type = CellSpace::TYPE_CELLSPACE::TYPE_DOOR;
+		bool cell_space_constructed = true;
+		{
+			Plane p = f_boundary_to_base_facet->get_plane();
+			Point3D v = f_boundary_to_opposite_facet->get_plane().p;
+			length_t d;
+			p.project(v, &d);
+			if (abs(d) < 0.001) {
+				cell_space_constructed = false;
+			}
+		}
+
+		State* s = 0;
+
+		if (cell_space_constructed) {
+			CellSpace* c = new CellSpace();
+			if (connections[i].fbase_opposite) {
+				c->cellspace_type = CellSpace::TYPE_CELLSPACE::TYPE_DOOR;
+			}
+			else {
+				c->cellspace_type = CellSpace::TYPE_CELLSPACE::TYPE_EXTERIORDOOR;
+			}
+			c->facets.push_back(f_boundary_to_base_facet);
+			c->facets.push_back(f_boundary_to_opposite_facet);
+			for (int i = 0; i < side_facets.size(); ++i) {
+				c->facets.push_back(side_facets[i]);
+			}
+
+			for (int i = 0; i < boundary_to_base_facet.size(); ++i) {
+				vertices.push_back(boundary_to_base_facet[i]);
+				vertices.push_back(boundary_to_opposite_facet[i]);
+			}
+
+			cellspaces.push_back(c);
+
+			s = new State();
+			s->p = c->get_centroid();
+			s->duality = c;
+			c->duality = s;
+			base_layer->states.push_back(s);
 		}
 		else {
-			c->cellspace_type = CellSpace::TYPE_CELLSPACE::TYPE_EXTERIORDOOR;
-		}
-		c->facets.push_back(f_boundary_to_base_facet);
-		c->facets.push_back(f_boundary_to_opposite_facet);
-		for (int i = 0; i < side_facets.size(); ++i) {
-			c->facets.push_back(side_facets[i]);
+			s = belongs_to.at(connections[i].fbase_opposite)->duality;
 		}
 
-		for (int i = 0; i < boundary_to_base_facet.size(); ++i) {
-			vertices.push_back(boundary_to_base_facet[i]);
-			vertices.push_back(boundary_to_opposite_facet[i]);
-		}
-
-		cellspaces.push_back(c);
-
-		State *s = new State();
-		s->p = c->get_centroid();
-		s->duality = c;
-		c->duality = s;
-		base_layer->states.push_back(s);
-
-		if(1) {
-			Transition *t_bm = new Transition();
+		if (1) {
+			Transition* t_bm = new Transition();
 			t_bm->u = s;
 			t_bm->v = belongs_to.at(connections[i].fbase)->duality;
 			belongs_to.at(connections[i].fbase)->duality->connects.push_back(t_bm);
@@ -207,44 +233,48 @@ void World::make_cellspaces(void) {
 			base_layer->transitions.push_back(t_bm);
 
 			// corresponding CellSpaceBoundary's
-			CellSpaceBoundary *boundary_on_base_towards_middle = new CellSpaceBoundary();
+			CellSpaceBoundary* boundary_on_base_towards_middle = new CellSpaceBoundary();
 			boundary_on_base_towards_middle->cellspace = t_bm->v->duality;
 			boundary_on_base_towards_middle->ring = boundary_to_base_facet;
 			boundary_on_base_towards_middle->duality = t_bm;
 			t_bm->forward_duality = boundary_on_base_towards_middle;
 			boundary_on_base_towards_middle->cellspace->boundaries.push_back(boundary_on_base_towards_middle);
 
-			CellSpaceBoundary *boundary_on_middle_towards_base = new CellSpaceBoundary();
+			CellSpaceBoundary* boundary_on_middle_towards_base = new CellSpaceBoundary();
 			boundary_on_middle_towards_base->cellspace = t_bm->u->duality;
 			boundary_on_middle_towards_base->ring = boundary_to_base_facet;
 			reverse(boundary_on_middle_towards_base->ring.begin(), boundary_on_middle_towards_base->ring.end());
 			boundary_on_middle_towards_base->duality = t_bm;
 			t_bm->reverse_duality = boundary_on_middle_towards_base;
 			boundary_on_middle_towards_base->cellspace->boundaries.push_back(boundary_on_middle_towards_base);
+
+			t_bm->midpoints.push_back(boundary_on_base_towards_middle->get_centroid());
 		}
 
-		if(connections[i].fbase_opposite) {
-			Transition *t_mo = new Transition();
+		if (cell_space_constructed && connections[i].fbase_opposite) {
+			Transition* t_mo = new Transition();
 			t_mo->u = s;
 			t_mo->v = belongs_to.at(connections[i].fbase_opposite)->duality;
 			belongs_to.at(connections[i].fbase_opposite)->duality->connects.push_back(t_mo);
 			s->connects.push_back(t_mo);
 			base_layer->transitions.push_back(t_mo);
 
-			CellSpaceBoundary *boundary_on_opposite_towards_middle = new CellSpaceBoundary();
+			CellSpaceBoundary* boundary_on_opposite_towards_middle = new CellSpaceBoundary();
 			boundary_on_opposite_towards_middle->cellspace = t_mo->v->duality;
 			boundary_on_opposite_towards_middle->ring = boundary_to_opposite_facet;
 			boundary_on_opposite_towards_middle->duality = t_mo;
 			t_mo->forward_duality = boundary_on_opposite_towards_middle;
 			boundary_on_opposite_towards_middle->cellspace->boundaries.push_back(boundary_on_opposite_towards_middle);
 
-			CellSpaceBoundary *boundary_on_middle_towards_opposite = new CellSpaceBoundary();
+			CellSpaceBoundary* boundary_on_middle_towards_opposite = new CellSpaceBoundary();
 			boundary_on_middle_towards_opposite->cellspace = t_mo->u->duality;
 			boundary_on_middle_towards_opposite->ring = boundary_to_opposite_facet;
 			reverse(boundary_on_middle_towards_opposite->ring.begin(), boundary_on_middle_towards_opposite->ring.end());
 			boundary_on_middle_towards_opposite->duality = t_mo;
 			t_mo->reverse_duality = boundary_on_middle_towards_opposite;
 			boundary_on_middle_towards_opposite->cellspace->boundaries.push_back(boundary_on_middle_towards_opposite);
+
+			t_mo->midpoints.push_back(boundary_on_opposite_towards_middle->get_centroid());
 		}
 	}
 

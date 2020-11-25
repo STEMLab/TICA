@@ -78,6 +78,8 @@ struct CellSpaceBoundary {
 	CellSpace* cellspace;
 	std::vector<Vertex*> ring;
 	Transition *duality;
+
+	Point3D get_centroid(void) const;
 };
 
 struct World {

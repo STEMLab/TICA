@@ -157,21 +157,23 @@ bool InFactoryQueryBuilder::add_state(State* s) {
 }
 bool InFactoryQueryBuilder::add_transition(Transition* t) {
 	// [NOTE]
-	// 잘 넣었다면 반드시 
+	// in the case of door-to-(Room || corridor):
 
-	// t->u 는 door or exteriordoor 이어야 함!
-	// t->v 는 room or corridor
+	//   t->u 는 door or exteriordoor 이어야 함!
+	//   t->v 는 room or corridor
 	
-	// u에 있는 boundary가 reverse
-	// v에 있는 boundary가 정방향
+	//   u에 있는 boundary가 reverse
+	//   v에 있는 boundary가 정방향
 	
-	// u <-- v 가 reverse
-	// u --> v 가 정방향
-
+	//   u <-- v 가 reverse
+	//   u --> v 가 정방향
+	
+	/* disabled checking function
 	if (!t->u->duality->is_door()) {
 		cerr << "NOT A DOOR" << endl;
 		return false;
 	}
+	*/
 	
 	string id = "";
 	if (t->v->duality->is_corridor()){
@@ -181,11 +183,10 @@ bool InFactoryQueryBuilder::add_transition(Transition* t) {
 		id = "ROOMSIDE-DOOR";
 	}
 	else {
-		cerr << "NO COR OR ROOM DETECTED" << endl;
-		return false;
-	}
-
-	
+		id = "DOOR";
+		//cerr << "NO COR OR ROOM DETECTED" << endl;
+		//return false;
+	}	
 
 	{
 		transition.push_back(t);

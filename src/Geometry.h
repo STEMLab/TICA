@@ -123,6 +123,13 @@ struct Line3D {
 	Vector3D v;
 };
 
+struct Polygon2D {
+	std::vector<Point2D> exterior;
+	std::vector<std::vector<Point2D> > hole;
+
+	std::vector<Polygon2D> intersection(const Polygon2D & x) const;
+};
+
 struct Plane {
 	Plane();
 	Plane(const Point3D& _p, const Vector3D& _h);

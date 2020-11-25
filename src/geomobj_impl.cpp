@@ -1350,6 +1350,46 @@ Plane Facet::get_plane(void) const {
 	return plane;
 }
 
+Polygon2D Facet::get_polygon(void) const {
+	return get_polygon(plane);
+}
+
+Polygon2D Facet::get_polygon(const Plane& pl) const
+{
+	Vector3D bu, bv;
+	pl.get_basis(&bu, &bv);
+	std::cout << bu.x << ' ' << bu.y << std::endl;
+	Polygon2D poly;
+	{
+		FacetEdge* e_begin = exterior;
+		FacetEdge* e = e_begin;
+		do {
+			Point3D u = e->get_u()->to_point3();
+			Point2D p(bu.dot_product(u - pl.p), bv.dot_product(u - pl.p));
+
+			poly.exterior.push_back(p);
+
+			e = e->next();
+		} while (e != e_begin);
+	}
+
+	for (int i = 0; i < num_holes(); ++i) {
+		FacetEdge* e_begin = this->holes[i];
+		FacetEdge* e = e_begin;
+		vector<Point2D> h;
+		do {
+			Point3D u = e->get_u()->to_point3();
+			Point2D p(bu.dot_product(u - pl.p), bv.dot_product(u - pl.p));
+
+			h.push_back(p);
+
+			e = e->next();
+		} while (e != e_begin);
+		poly.hole.push_back(h);
+	}
+	return poly;
+}
+
 bool Facet::planarize(void) {
 	bool failed = false;
 	set<Facet*> adj_facets;
@@ -1470,4 +1510,12 @@ void Facet::partition_vertex(const Line3D& l, vector<FacetVertex*>& a, vector<Fa
 			b.push_back(vertex[i]);
 		}
 	}
+}
+
+bool Facet::is_good(void)const {
+	const Vector3D& h = this->get_plane().h;
+	if (h.is_zero()) return false;
+	if (!isfinite(h.x) || !isfinite(h.y) || !isfinite(h.z)) return false;
+	if (this->area() < EPSILON) return false;
+	return true;
 }

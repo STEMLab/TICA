@@ -189,6 +189,10 @@ public:
 	void set_plane(const Plane& p);
 	Plane get_plane(void) const;
 
+	Polygon2D get_polygon(void) const;
+	Polygon2D get_polygon(const Plane& p) const;
+
+	bool is_good(void) const;
 private:
 	//FacetVertex *create_vertex(Vertex*);
 	//FacetEdge *create_edge(FacetVertex*, FacetVertex*);

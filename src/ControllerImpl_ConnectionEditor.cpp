@@ -229,6 +229,39 @@ void ConnectionBasicViewer::make_ui(void) {
 	ImGui::DragFloat("Base Offset", &door_baseoffset, 0.01);
 	ImGui::DragFloat("Width", &door_width, 0.01);
 	ImGui::DragFloat("Height", &door_height, 0.01);
+
+	ImGui::Text("");
+	if (this->f_front && this->f_back) {
+		if (ImGui::Button("Make a connection from intersection")) {
+			Plane plane = this->f_back->get_plane();
+			Polygon2D p1 = this->f_front->get_polygon(plane);
+			Polygon2D p2 = this->f_back->get_polygon();
+
+			p2.exterior = std::vector<Point2D>(p2.exterior.rbegin(), p2.exterior.rend());
+			std::vector<Polygon2D> p = p1.intersection(p2);
+
+			Vector3D u, v;
+			plane.get_basis(&u, &v);
+			for (int j = 0; j < p.size(); ++j) {
+				std::vector<Point3D> pts;
+				
+				for (int k = 0; k+1 < p[j].exterior.size(); ++k) {
+					Point3D p_on_back = plane.p + (u * p[j].exterior[k].x + v * p[j].exterior[k].y);
+					Line3D l(p_on_back, plane.h);
+					scalar_t a;
+					interp(l, this->f_front->get_plane(), &a);
+					Point3D p_proj = l.p + l.v * a;
+					pts.push_back(p_proj);
+				}
+
+				Connection conn;
+				conn.fbase = this->f_front;
+				conn.fbase_opposite = this->f_back;
+				conn.ring = pts;
+				this->world->connections.push_back(conn);
+			}
+		}
+	}
 	ImGui::End();
 }
 
@@ -444,7 +477,7 @@ void ConnectionBasicViewer::on_mouse_down(int x, int y, const Line3D& ray, int c
 	if (sel.selection_type == ConnectionEditorSelector::CONNECTIONEDITOR_SELECTION_TYPE_FACET) {
 		do {
 			Facet* f = facets[sel.selected_i];
-			if (abs(f->get_plane().h.z) > 0.9) break; // skip floor or ceiling
+			//if (abs(f->get_plane().h.z) > 0.9) break; // skip floor or ceiling
 
 			float dist2 = 0;
 			float alpha;
@@ -459,7 +492,7 @@ void ConnectionBasicViewer::on_mouse_down(int x, int y, const Line3D& ray, int c
 				alpha = 0;
 
 				if (!interp(ray_from_p, f2->get_plane(), &alpha)) continue;
-				if (alpha <= 0) continue;
+				if (alpha <= -0.001) continue;
 				Point3D p_on_f2 = ray_from_p.p + alpha * ray_from_p.v;
 				p_on_f2 = f2->get_plane().project(p_on_f);
 				float d2 = (p_on_f2 - p_on_f).length_square();

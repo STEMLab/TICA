@@ -1,5 +1,9 @@
 #include "Geometry.h"
 #include <cmath>
+//#include <boost/polygon/polygon.hpp>
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 Point2D::Point2D(void) { ; }
@@ -220,6 +224,101 @@ Line3D::Line3D(const Point3D& _p, const Point3D& _q) : p(_p), v(_q-_p) { ; }
 Line3D::Line3D(const Point3D& _p, const Vector3D& _v) : p(_p), v(_v) { ; }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+typedef boost::polygon::polygon_with_holes_data<scalar_t> boost_polygon;
+typedef boost::polygon::polygon_traits<boost_polygon>::point_type boost_point;
+static boost_polygon to_boost_polygon(const Polygon2D& poly) {
+	using namespace boost::polygon;
+	boost_polygon p;
+	std::vector<boost_point> exterior;
+	for (int i = 0; i < poly.exterior.size(); ++i) {
+		exterior.push_back(construct<boost_point>(poly.exterior[i].x, poly.exterior[i].y));
+	}
+
+	std::vector< std::vector<boost_point> > holes;
+	for (int r = 0; r < poly.hole.size(); ++r) {
+		std::vector<boost_point> hole;
+		for (int i = 0; i < poly.hole[r].size(); ++i) {
+			hole.push_back(construct<boost_point>(poly.hole[r][i].x, poly.hole[r][i].y));
+		}
+		holes.push_back(hole);
+	}
+	
+	set_points(p, exterior.begin(), exterior.end());
+	set_holes(p, holes.begin(), holes.end());
+
+	return p;
+}
+
+static Polygon2D to_polygon2d(const boost_polygon& poly) {
+	Polygon2D ret;
+	
+	
+	for (auto i = poly.begin(); i != poly.end(); ++i) {
+		ret.exterior.push_back(Point2D(i->x(), i->y()));
+	}
+
+	for (auto i = poly.begin_holes(); i != poly.end_holes(); ++i) {
+		std::vector<Point2D> hole;
+		for (auto j = i->begin(); j != i->end(); ++j) {
+			hole.push_back(Point2D(j->x(), j->y()));
+		}
+		ret.hole.push_back(hole);
+	}
+
+	return ret;
+}
+std::vector<Polygon2D> Polygon2D::intersection(const Polygon2D& x) const {
+	boost_polygon p = to_boost_polygon(*this);
+	boost_polygon q = to_boost_polygon(x);
+	using namespace boost::polygon::operators;
+	//typedef  PolygonSet;
+	//PolygonSet ps;
+	std::vector<boost_polygon> intersection_ret;
+	std::cout << "DIRTY" << (p & q).dirty() << std::endl;
+	assign(intersection_ret, p & q);
+
+	std::vector<Polygon2D> ret;
+	for (int i = 0; i < intersection_ret.size(); ++i) {
+		ret.push_back(to_polygon2d(intersection_ret[i]));
+	}
+	return ret;
+}
+*/
+typedef boost::geometry::model::polygon<boost::geometry::model::d2::point_xy<double> > boost_polygon;
+typedef boost_polygon::point_type boost_point;
+
+static boost_polygon to_boost_polygon(const Polygon2D& poly) {
+	boost_polygon ret;
+	std::vector<boost_point> pts;
+	for (int i = 0; i < poly.exterior.size(); ++i) {
+		pts.push_back(boost_point(poly.exterior[i].x, poly.exterior[i].y));
+	}
+	pts.push_back(boost_point(poly.exterior[0].x, poly.exterior[0].y));
+	boost::geometry::assign_points(ret, pts);
+	return ret;
+}
+static Polygon2D to_polygon2d(const boost_polygon& poly) {
+	Polygon2D ret;
+	for (auto i = poly.outer().begin(); i != poly.outer().end(); ++i) {
+		ret.exterior.push_back(Point2D((*i).x(), (*i).y()));
+	}
+	return ret;
+}
+std::vector<Polygon2D> Polygon2D::intersection(const Polygon2D& x) const {
+	boost_polygon p = to_boost_polygon(*this);
+	boost_polygon q = to_boost_polygon(x);
+
+	std::vector<boost_polygon> intersection_ret;
+	boost::geometry::intersection(p, q, intersection_ret);
+	std::vector<Polygon2D> ret;
+	for (int i = 0; i < intersection_ret.size(); ++i) {
+		ret.push_back(to_polygon2d(intersection_ret[i]));
+	}
+	return ret;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 Plane::Plane(void) { ; }
 Plane::Plane(const Point3D& _p, const Vector3D& _h) : p(_p), h(_h) { ; }
 Point3D Plane::project(const Point3D& q, length_t *d) const {
@@ -275,9 +374,9 @@ void Plane::get_basis(Vector3D* u, Vector3D* v) const {
 	Vector3D ux(1, 0, 0);
 	Vector3D uy(0, 1, 0);
 	Vector3D uz(0, 0, 1);
-	scalar_t dx = h.dot_product(ux);
-	scalar_t dy = h.dot_product(uy);
-	scalar_t dz = h.dot_product(uz);
+	scalar_t dx = abs(h.dot_product(ux));
+	scalar_t dy = abs(h.dot_product(uy));
+	scalar_t dz = abs(h.dot_product(uz));
 
 	Vector3D base_u, base_v;
 

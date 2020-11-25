@@ -558,14 +558,18 @@ void __temp_save_connection(const string& fname) {
 	ofstream out(fname);
 	for (int i = 0; i < w.connections.size(); ++i) {
 		out << w.connections[i].ring.size();
-		for (int j = 0; j != w.connections[i].ring.size(); ++j) {
-			out << ' ' << w.connections[i].ring[j].x << ' ' << w.connections[i].ring[j].y << ' ' << w.connections[i].ring[j].z;
+		vector<Point3D> ring = w.connections[i].ring;
+		if (w.connections[i].get_normal_of_ring().dot_product(w.connections[i].fbase->get_plane().h) < 0) {
+			ring = vector<Point3D>(ring.rbegin(),ring.rend());
+		}
+		for (int j = 0; j != ring.size(); ++j) {
+			out << ' ' << ring[j].x << ' ' << ring[j].y << ' ' << ring[j].z;
 		}
 		if (w.connections[i].fbase_opposite) {
-			out << ' ' << w.connections[i].ring.size();
+			out << ' ' << ring.size();
 			Plane Popp = w.connections[i].fbase_opposite->get_plane();
-			for (int j = 0; j != w.connections[i].ring.size(); ++j) {
-				Point3D p_proj = Popp.project(w.connections[i].ring[j]);
+			for (int j = 0; j != ring.size(); ++j) {
+				Point3D p_proj = Popp.project(ring[j]);
 				out << ' ' <<  p_proj.x << ' ' << p_proj.y << ' ' << p_proj.z;
 			}
 		}
@@ -593,7 +597,25 @@ static pair<bool,pair<T,T> > distance_bound_between_connection_and_facet(const C
 		
 		Point3D p_proj = c.ring[i] - alpha * plane.h;
 		if (f->winding_number(p_proj) % 2 == 0) {
-			in = false;
+			bool close_v = false;
+			for (int i = 0; i < f->num_vertices(); ++i) {
+				if ((f->get_vertex(i)->to_point3().to_vector() - p_proj.to_vector()).is_zero()){
+					close_v = true;
+					break;
+				}
+			}
+			for (int i = 0; i < f->num_edges(); ++i) {
+				Point3D u = f->get_edge(i)->get_u()->to_point3();
+				Point3D v = f->get_edge(i)->get_v()->to_point3();
+				Line3D l(u, v);
+				scalar_t a;
+				interp(p_proj, l, &a);
+				if (0 <= a && a <= 1 && (p_proj.to_vector() - (l.p + a * l.v).to_vector()).is_zero()) {
+					close_v = true;
+					break;
+				}
+			}
+			if (!close_v) { in = false; }
 		}
 	}
 	return make_pair( in, make_pair(m, M) );
