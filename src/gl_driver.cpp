@@ -58,6 +58,16 @@ int main(int, char**)
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
 	io.ConfigWindowsMoveFromTitleBarOnly = true;
+	//io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\NanumGothic.ttf", 12.0, 0, io.Fonts->GetGlyphRangesKorean());
+
+	/*ImFontConfig font_config;
+	font_config.OversampleH = 1; //or 2 is the same
+	font_config.OversampleV = 1;
+	font_config.PixelSnapH = 1;
+	font_config.FontNo = 3;
+	//io.Fonts->AddFontDefault();
+	io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\Gulim.ttc", 15.0f, &font_config, io.Fonts->GetGlyphRangesKorean());
+	*/
 
 	// Setup Dear ImGui style
 	ImGui::StyleColorsDark();

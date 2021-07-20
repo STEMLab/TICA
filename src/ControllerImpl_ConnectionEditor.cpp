@@ -231,8 +231,14 @@ void ConnectionBasicViewer::make_ui(void) {
 	ImGui::DragFloat("Height", &door_height, 0.01);
 
 	ImGui::Text("");
+	if (ImGui::Button("Undo", ImVec2(300, 0))) {
+		if (!this->world->connections.empty()) {
+			this->world->connections.pop_back();
+		}
+	}
+	ImGui::Text("");
 	if (this->f_front && this->f_back) {
-		if (ImGui::Button("Make a connection from intersection")) {
+		if (ImGui::Button("Make a connection from intersection", ImVec2(300, 0))) {
 			Plane plane = this->f_back->get_plane();
 			Polygon2D p1 = this->f_front->get_polygon(plane);
 			Polygon2D p2 = this->f_back->get_polygon();

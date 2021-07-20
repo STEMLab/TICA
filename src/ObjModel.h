@@ -8,10 +8,17 @@
 
 class ObjModel {
 public:
+	enum DRAWING_MODE {
+		MODE_LINE,
+		MODE_TEXTURE,
+		MODE_GEOMETRY,
+		MODE_INDEX,
+	};
 	void parse(std::istream& in);
 	void init(void);
 	void release(void);
-	void draw(bool line);
+	void draw(DRAWING_MODE m, bool use_z_filter, float zmin, float zmax, float tx, float ty, float theta, bool);
+	std::vector<float> visibility;
 
 private:
 	std::map<std::string, int> idmap;
@@ -24,7 +31,8 @@ private:
 	std::vector<std::vector<float>> tri_t;
 
 	GLuint  va;
-	GLuint* v_buffer;
-	GLuint* t_buffer;
-	GLuint* textureID;
+	GLuint*  v_buffer;
+	GLuint*  t_buffer;
+	GLuint*  s_buffer;
+	GLuint*  textureID;
 };

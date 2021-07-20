@@ -56,6 +56,8 @@ struct State {
 };
 
 struct CellSpace {
+	CellSpace();
+
 	enum TYPE_CELLSPACE {
 		TYPE_ROOM,
 		TYPE_CORRIDOR,
@@ -65,7 +67,15 @@ struct CellSpace {
 	} cellspace_type;
 	std::vector< Facet* > facets;
 	std::vector< CellSpaceBoundary* > boundaries;
-	std::string tag;
+
+	bool defaultname;
+	char name       [1024];
+	char description[1024];
+	char classtype  [1024];
+	char function   [1024];
+	char usage      [1024];
+	bool checked;
+
 	State *duality;
 
 	Point3D get_centroid(void) const;

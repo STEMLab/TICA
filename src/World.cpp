@@ -1,7 +1,9 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include "World.h"
 #include <vector>
 #include <set>
 #include <map>
+
 using namespace std;
 
 Vector3D Connection::get_normal_of_ring(void) const {
@@ -32,6 +34,16 @@ bool State::is_public_safty_feature(void) const {
 	default: throw("Undefined State type)");
 	}
 	return false;
+}
+
+CellSpace::CellSpace() {
+	this->defaultname = true;
+	this->name[0] = '\0';
+	this->description[0] = '\0';
+	strcpy(this->classtype, "1010");
+	strcpy(this->function, "1110");
+	strcpy(this->usage, "");
+	this->checked = false;
 }
 
 Point3D CellSpace::get_centroid(void) const {
@@ -332,7 +344,7 @@ void World::make_cellspaces(void) {
 		c->facets.push_back(f5);
 		c->facets.push_back(f6);
 		c->cellspace_type = CellSpace::TYPE_CELLSPACE::TYPE_NONNAVIGABLE;
-		c->tag = objects[i].tag;
+		//c->tag = objects[i].tag;
 
 		State *s = new State();
 		s->p = c->get_centroid();

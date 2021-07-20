@@ -1358,7 +1358,7 @@ Polygon2D Facet::get_polygon(const Plane& pl) const
 {
 	Vector3D bu, bv;
 	pl.get_basis(&bu, &bv);
-	std::cout << bu.x << ' ' << bu.y << std::endl;
+	//std::cout << bu.x << ' ' << bu.y << std::endl;
 	Polygon2D poly;
 	{
 		FacetEdge* e_begin = exterior;

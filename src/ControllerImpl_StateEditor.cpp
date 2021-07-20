@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "ControllerImpl_StateEditor.h"
 #include "Util.h"
 #include <vector>
@@ -142,7 +144,15 @@ struct StateEditorHighlighter : public StateEditorDrawSetting {
 		return true;
 	}
 
-	virtual void begin_cellspace(int i) {}
+	virtual void begin_cellspace(int i) {
+		switch (Controller::world->cellspaces[i]->cellspace_type) {
+		case CellSpace::TYPE_CELLSPACE::TYPE_ROOM: facet_color = Color(0.5, 0.5, 0.5); break;
+		case CellSpace::TYPE_CELLSPACE::TYPE_CORRIDOR: facet_color = Color(0.5, 0.7, 0.5); break;
+		case CellSpace::TYPE_CELLSPACE::TYPE_DOOR: facet_color = Color(0.5, 0.5, 0.7); break;
+		case CellSpace::TYPE_CELLSPACE::TYPE_EXTERIORDOOR: facet_color = Color(0.7, 0.5, 0.5); break;
+		default:  facet_color = Color(0.5, 0.5, 0.5);
+		}
+	}
 	virtual void begin_layer(int i) {}
 	virtual bool begin_state(int i, State * s) {
 		if (s->is_public_safty_feature()) return false;
@@ -363,7 +373,12 @@ struct StateEditorMainDrawSetting : public StateEditorHighlighter {
 			setColorf(0.7, 0.7, 0.7);
 		}
 		else {
-			setColorf(1, 0, 0);
+			if (s->duality->checked) {
+				setColorf(0, 1, 1);
+			}
+			else {
+				setColorf(1, 0, 0);
+			}
 		}
 		if (selected_state.count(s)) setColorf(0, 1, 0);
 		return true;
@@ -437,27 +452,72 @@ void StateMainController::on_mouse_down(int x, int y, const Line3D& ray, int cur
 		selected_transition = world->layers[d.selected_g]->transitions[d.selected_i];
 	}
 }
+
+static const char* (*Codelist)[2] = 0;
+static int Codelist_N = 0;
+static char* target = 0;
+extern const char* Generalspace_code_type[][2];
+extern int Generalspace_code_type_size;
+extern const char* Generalspace_function_type[][2];
+extern int Generalspace_function_type_size;
+extern const char* Transitionspace_code_type[][2];
+extern int Transitionspace_code_type_size;
+extern const char* Transitionspace_function_type[][2];
+extern int Transitionspace_function_type_size;
+extern const char* Connectionspace_code_type[][2];
+extern int Connectionspace_code_type_size;
+extern const char* Connectionspace_function_type[][2];
+extern int Connectionspace_function_type_size;
+extern const char* Anchorspace_code_type[][2];
+extern int Anchorspace_code_type_size;
+extern const char* Anchorspace_function_type[][2];
+extern int Anchorspace_function_type_size;
+
+static void show_list() {
+	const char* (*codelist)[2] = Codelist;
+	const int n = Codelist_N;
+	if (ImGui::BeginPopupModal("Code List")) {
+		if (ImGui::Button("Close##1", ImVec2(250, 0))) {
+			target = 0;
+			ImGui::CloseCurrentPopup();
+		}
+
+		for (int i = 0; i < n; ++i) {
+			if (ImGui::Button(codelist[i][0], ImVec2(100, 0))) {
+				if (target) strcpy(target, codelist[i][0]);
+				target = 0;
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			ImGui::Text(codelist[i][1]);
+		}
+
+		if (ImGui::Button("Close##2", ImVec2(250, 0))) {
+			target = 0;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+}
+
 void StateMainController::make_ui(void) {
 	ImGui::Begin("State Editor Menu");
-	if (ImGui::Button("Edit State/Transition Geometry")) {
-		if (!next) {
-			next = new StateLocationEditor(this);
-		}
-	}
+	/*
 	if (ImGui::Button("Place a Public Safety Feature")) {
 		if (!next) {
 			next = new StatePSFeaturePlacer(this);
 		}
-	}
+	}*/
 
 	if (selected_state) {
-		ImGui::Text("======================");
+		//ImGui::Text("======================");
 		if (!selected_state->is_nonnavigable() && !selected_state->is_public_safty_feature()) {
-			if (ImGui::Button("Interlayer Connection Editor")) {
+			/*if (ImGui::Button("Interlayer Connection Editor")) {
 				if (!next) {
 					next = new StateInterlayerConnectionEstablisher(this, selected_state);
 				}
 			}
+			*/
 
 			bool room = (selected_state->duality->cellspace_type == CellSpace::TYPE_CELLSPACE::TYPE_ROOM);
 			bool corridor = (selected_state->duality->cellspace_type == CellSpace::TYPE_CELLSPACE::TYPE_CORRIDOR);
@@ -471,7 +531,7 @@ void StateMainController::make_ui(void) {
 			if (ImGui::RadioButton("Room", &room_type, 1)) {
 				selected_state->duality->cellspace_type = CellSpace::TYPE_CELLSPACE::TYPE_ROOM;
 			}
-			if (ImGui::RadioButton("Corridor", &room_type, 2)) {
+			if (ImGui::RadioButton("Corridor/Stair", &room_type, 2)) {
 				selected_state->duality->cellspace_type = CellSpace::TYPE_CELLSPACE::TYPE_CORRIDOR;
 			}
 			if (ImGui::RadioButton("Door", &room_type, 3)) {
@@ -480,13 +540,103 @@ void StateMainController::make_ui(void) {
 			if (ImGui::RadioButton("Exterior Door", &room_type, 4)) {
 				selected_state->duality->cellspace_type = CellSpace::TYPE_CELLSPACE::TYPE_EXTERIORDOOR;
 			}
+
+			ImGui::Text("Name       "); ImGui::SameLine(); ImGui::InputText("##Name", selected_state->duality->name, 1023);
+			ImGui::Text("Description"); ImGui::SameLine(); ImGui::InputText("##Description", selected_state->duality->description, 1023);
+			ImGui::Text("ClassType  "); ImGui::SameLine(); ImGui::InputText("##Class Type", selected_state->duality->classtype, 1023); ImGui::SameLine();
+			if (ImGui::Button("...##ClassType", ImVec2(30, 0))) {
+				target = selected_state->duality->classtype;
+				switch (selected_state->duality->cellspace_type) {
+				case CellSpace::TYPE_CELLSPACE::TYPE_ROOM:
+					Codelist = Generalspace_code_type;
+					Codelist_N = Generalspace_code_type_size;
+					break;
+				case CellSpace::TYPE_CELLSPACE::TYPE_CORRIDOR:
+					Codelist = Transitionspace_code_type;
+					Codelist_N = Transitionspace_code_type_size;
+					break;
+				case CellSpace::TYPE_CELLSPACE::TYPE_DOOR:
+					Codelist = Connectionspace_code_type;
+					Codelist_N = Connectionspace_code_type_size;
+					break;
+				case CellSpace::TYPE_CELLSPACE::TYPE_EXTERIORDOOR:
+					Codelist = Anchorspace_code_type;
+					Codelist_N = Anchorspace_code_type_size;
+					break;
+				default:;
+					target = 0;
+				}
+				
+				
+				ImGui::OpenPopup("Code List");
+			}
+			ImGui::Text("Function   "); ImGui::SameLine(); ImGui::InputText("##Function Type", selected_state->duality->function, 1023); ImGui::SameLine();
+			if (ImGui::Button("...##Function", ImVec2(30, 0))) {
+				target = selected_state->duality->function;
+				switch (selected_state->duality->cellspace_type) {
+				case CellSpace::TYPE_CELLSPACE::TYPE_ROOM:
+					Codelist = Generalspace_function_type;
+					Codelist_N = Generalspace_function_type_size;
+					break;
+				case CellSpace::TYPE_CELLSPACE::TYPE_CORRIDOR:
+					Codelist = Transitionspace_function_type;
+					Codelist_N = Transitionspace_function_type_size;
+					break;
+				case CellSpace::TYPE_CELLSPACE::TYPE_DOOR:
+					Codelist = Connectionspace_function_type;
+					Codelist_N = Connectionspace_function_type_size;
+					break;
+				case CellSpace::TYPE_CELLSPACE::TYPE_EXTERIORDOOR:
+					Codelist = Anchorspace_function_type;
+					Codelist_N = Anchorspace_function_type_size;
+					break;
+				default:;
+					target = 0;
+				}
+				ImGui::OpenPopup("Code List");
+			}
+			ImGui::Text("Usage      "); ImGui::SameLine(); ImGui::InputText("##Usage Type", selected_state->duality->usage, 1023); ImGui::SameLine();
+			if (ImGui::Button("...##Usage", ImVec2(30, 0))) {
+				target = selected_state->duality->usage;
+				switch (selected_state->duality->cellspace_type) {
+				case CellSpace::TYPE_CELLSPACE::TYPE_ROOM:
+					Codelist = Generalspace_function_type;
+					Codelist_N = Generalspace_function_type_size;
+					break;
+				case CellSpace::TYPE_CELLSPACE::TYPE_CORRIDOR:
+					Codelist = Transitionspace_function_type;
+					Codelist_N = Transitionspace_function_type_size;
+					break;
+				case CellSpace::TYPE_CELLSPACE::TYPE_DOOR:
+					Codelist = Connectionspace_function_type;
+					Codelist_N = Connectionspace_function_type_size;
+					break;
+				case CellSpace::TYPE_CELLSPACE::TYPE_EXTERIORDOOR:
+					Codelist = Anchorspace_function_type;
+					Codelist_N = Anchorspace_function_type_size;
+					break;
+				default:;
+					target = 0;
+				}
+				ImGui::OpenPopup("Code List");
+			}
+
+			ImGui::Text("");
+			ImGui::Text("Finalized  "); ImGui::SameLine(); ImGui::Checkbox("##FinalizedState", &selected_state->duality->checked);
+			ImGui::Text("");
 		}
-		if (ImGui::Button("Set to Default Location")) {
+		if (ImGui::Button("Reset to Default Location")) {
 			selected_state->p = selected_state->duality->get_centroid();
+		}
+		if (target) { show_list(); }
+	}
+	if (ImGui::Button("Edit State/Transition Geometry")) {
+		if (!next) {
+			next = new StateLocationEditor(this);
 		}
 	}
 	if (selected_transition) {
-		ImGui::Text("======================");
+		ImGui::Text("");
 		if (ImGui::Button("Remove all mid points")) {
 			selected_transition->midpoints.clear();
 		}

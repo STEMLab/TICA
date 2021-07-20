@@ -46,6 +46,7 @@ using namespace std;
 bool InFactoryQueryBuilder::initialize(void) {
 	if (server_url.empty()) {
 		server_url = "http://127.0.0.1:9797/";
+		//server_url = "http://192.168.0.7:9797/";
 	}
 	if (server_url[server_url.size() - 1] != '/') server_url.push_back('/');
 
@@ -105,20 +106,24 @@ bool InFactoryQueryBuilder::add_world(const World& w) {
 }
 
 bool InFactoryQueryBuilder::add_cellspace(CellSpace* c) {
-	string id = "";
-	switch (c->cellspace_type) {
-	case CellSpace::TYPE_CELLSPACE::TYPE_CORRIDOR: id = "CORRIDOR";  break;
-	case CellSpace::TYPE_CELLSPACE::TYPE_ROOM: id = "ROOM"; break;
-	case CellSpace::TYPE_CELLSPACE::TYPE_DOOR: id = "DOOR"; break;
-	case CellSpace::TYPE_CELLSPACE::TYPE_EXTERIORDOOR: id = "EXTERIORDOOR"; break;
-	case CellSpace::TYPE_CELLSPACE::TYPE_NONNAVIGABLE: id = "NON-NAVI" + (c->tag.empty()?"":"-"+c->tag); break;
-	default: return false;
+	string id(c->name);
+	bool empty_id = id.empty();
+	if (empty_id) {
+		switch (c->cellspace_type) {
+		case CellSpace::TYPE_CELLSPACE::TYPE_CORRIDOR: id = "CORRIDOR";  break;
+		case CellSpace::TYPE_CELLSPACE::TYPE_ROOM: id = "ROOM"; break;
+		case CellSpace::TYPE_CELLSPACE::TYPE_DOOR: id = "DOOR"; break;
+		case CellSpace::TYPE_CELLSPACE::TYPE_EXTERIORDOOR: id = "EXTERIORDOOR"; break;
+		case CellSpace::TYPE_CELLSPACE::TYPE_NONNAVIGABLE: id = "NON-NAVI"; break;
+		default: return false;
+		}
 	}
 	cellspace[id].push_back(c);
 	int id_no = cellspace[id].size();
 
 	stringstream ss;
-	ss << id << id_no;
+	ss << id;
+	if (empty_id || id_no > 1) { ss << id_no; }
 	cellspace_id[c] = ss.str();
 	return true;
 }
@@ -220,7 +225,17 @@ void InFactoryQueryBuilder::add_interlayerconnection(InterlayerConnection* i) {
 
 void InFactoryQueryBuilder::query_cellspace(CellSpace* c) {
 	string id = cellspace_id.at(c);
+	//string post_url = server_url + "/documents/" + doc_id + "/cellspace/" + id;
 	string post_url = server_url + "/documents/" + doc_id + "/cellspace/" + id;
+	string space_type = "cellspace";
+	switch (c->cellspace_type) {
+	case CellSpace::TYPE_CELLSPACE::TYPE_ROOM: space_type = "generalspace"; break;
+	case CellSpace::TYPE_CELLSPACE::TYPE_CORRIDOR: space_type = "transitionspace"; break;
+	case CellSpace::TYPE_CELLSPACE::TYPE_DOOR: space_type = "connectionspace"; break;
+	case CellSpace::TYPE_CELLSPACE::TYPE_EXTERIORDOOR: space_type = "anchorspace"; break;
+	default: space_type = "cellspace";
+	}
+	post_url = server_url + "/documents/" + doc_id + "/" + space_type + "/" + id;
 
 	bool reversed = false;
 	if (c->cellspace_type == CellSpace::TYPE_CELLSPACE::TYPE_NONNAVIGABLE) {
@@ -304,6 +319,15 @@ void InFactoryQueryBuilder::query_cellspace(CellSpace* c) {
 	{
 		stringstream properties;
 		properties << KeyValue("name", id) << ',';
+		properties << KeyValue("description", c->description) << ',';
+		properties << KeyValue("class", c->classtype) << ',';
+		properties << KeyValue("function", c->function) << ',';
+		if (c->usage[0] == '\0') {
+			properties << KeyValue("usage", c->function) << ',';
+		}
+		else {
+			properties << KeyValue("usage", c->usage) << ',';
+		}
 
 		{
 			stringstream partialboundedBy;
@@ -336,7 +360,8 @@ void InFactoryQueryBuilder::query_cellspace(CellSpace* c) {
 }
 void InFactoryQueryBuilder::query_cellspace_boundary(CellSpaceBoundary* b) {
 	string id = cellspace_boundary_id.at(b);
-	string post_url = server_url + "/documents/" + doc_id + "/cellspaceboundary/" + id;
+	//string post_url = server_url + "/documents/" + doc_id + "/cellspaceboundary/" + id;
+	string post_url = server_url + "/documents/" + doc_id + "/connectionboundary/" + id;
 
 	stringstream json_data;
 	json_data << "{";
@@ -344,7 +369,7 @@ void InFactoryQueryBuilder::query_cellspace_boundary(CellSpaceBoundary* b) {
 	json_data << KeyValue("id", id) << ',';
 	json_data << KeyValue("parentId", psf_id) << ',';
 	json_data << KeyValue("docId", doc_id) << ',';
-	json_data << KeyValue("type", "CellSpaceBoundary") << ',';
+	json_data << KeyValue("type", "ConnectionBoundary") << ',';
 	
 	{
 		stringstream geometry;
